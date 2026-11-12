@@ -1,10 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.InferredRootHistoryError = exports.LONGITUDINAL_OPERATIONS = void 0;
-exports.identityClassOf = identityClassOf;
-exports.assertLongitudinalRootIdentityAuthorized = assertLongitudinalRootIdentityAuthorized;
-exports.inferredRootHistoryOverride = inferredRootHistoryOverride;
-exports.inferredRootHistoryWarning = inferredRootHistoryWarning;
 // corpus_root_history.ts — whether "the same root as last time" is a claim worth making.
 //
 // A root's identity comes from its declared key. When the operator names it —
@@ -30,6 +24,12 @@ exports.inferredRootHistoryWarning = inferredRootHistoryWarning;
 // a warning that scrolls past is indistinguishable from no warning, and the
 // operator is exactly the person who knows whether two disks called `Backup` are
 // the same disk.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InferredRootHistoryError = exports.LONGITUDINAL_OPERATIONS = void 0;
+exports.identityClassOf = identityClassOf;
+exports.assertLongitudinalRootIdentityAuthorized = assertLongitudinalRootIdentityAuthorized;
+exports.inferredRootHistoryOverride = inferredRootHistoryOverride;
+exports.inferredRootHistoryWarning = inferredRootHistoryWarning;
 const ordering_1 = require("./ordering");
 /** A longitudinal operation, named as the refusal will name it. */
 exports.LONGITUDINAL_OPERATIONS = [
@@ -65,19 +65,18 @@ function identityClassOf(record) {
  * a basename, so the thing being matched against may not be this root at all.
  */
 function isWeak(claim) {
-    return claim.previous_identity_class !== "declared"
-        || claim.current_identity_class !== "declared";
+    return (claim.previous_identity_class !== "declared" || claim.current_identity_class !== "declared");
 }
 function refusalMessage(operation, claims) {
     const roots = claims
-        .map((claim) => `'${claim.root_key}' (previously ${claim.previous_identity_class}, `
-        + `now ${claim.current_identity_class})`)
+        .map((claim) => `'${claim.root_key}' (previously ${claim.previous_identity_class}, ` +
+        `now ${claim.current_identity_class})`)
         .join(", ");
-    return (`corpus: refusing ${operation} for ${claims.length === 1 ? "root" : "roots"} ${roots}: `
-        + "root continuity depends on an inferred basename identity, which two unrelated "
-        + "directories can share. Name the root explicitly with --root <path>=<key> or a "
-        + "corpus manifest. If you intentionally accept this weaker identity, pass "
-        + "--allow-inferred-root-history.");
+    return (`corpus: refusing ${operation} for ${claims.length === 1 ? "root" : "roots"} ${roots}: ` +
+        "root continuity depends on an inferred basename identity, which two unrelated " +
+        "directories can share. Name the root explicitly with --root <path>=<key> or a " +
+        "corpus manifest. If you intentionally accept this weaker identity, pass " +
+        "--allow-inferred-root-history.");
 }
 /**
  * Decide whether this run may claim continuity with a previous observation.
@@ -143,9 +142,9 @@ function inferredRootHistoryOverride(authorizations) {
 }
 /** The caution a run states when it proceeded on an identity it was told to accept. */
 function inferredRootHistoryWarning(override) {
-    return (`--allow-inferred-root-history was supplied: ${override.operations.join(", ")} `
-        + `proceeded for root(s) ${override.affected_root_ids.join(", ")} on an inferred `
-        + "basename identity. Continuity across runs is the operator's claim here, not this "
-        + "tool's.");
+    return (`--allow-inferred-root-history was supplied: ${override.operations.join(", ")} ` +
+        `proceeded for root(s) ${override.affected_root_ids.join(", ")} on an inferred ` +
+        "basename identity. Continuity across runs is the operator's claim here, not this " +
+        "tool's.");
 }
 //# sourceMappingURL=corpus_root_history.js.map

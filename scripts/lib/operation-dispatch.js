@@ -39,9 +39,10 @@ function parseBoolean(name, raw, defaultValue) {
 }
 
 function parseNumber(name, raw, defaultValue, predicate, expectation) {
-  const value = raw === undefined || raw === null || String(raw).trim() === ""
-    ? defaultValue
-    : Number(String(raw).trim());
+  const value =
+    raw === undefined || raw === null || String(raw).trim() === ""
+      ? defaultValue
+      : Number(String(raw).trim());
   if (!Number.isFinite(value) || !predicate(value)) {
     fail(`${name} must be ${expectation}, got '${raw}'`);
   }
@@ -65,14 +66,15 @@ function resolveMode(raw) {
       warnings: [`operation mode '${requested}' is deprecated; use '${mode}'`],
     };
   }
-  fail(`unsupported operation mode '${requested || "<empty>"}'; expected one of ${OPERATION_MODES.join(", ")}`);
+  fail(
+    `unsupported operation mode '${requested || "<empty>"}'; expected one of ${OPERATION_MODES.join(", ")}`,
+  );
 }
 
 function isWithin(parent, candidate) {
   const rel = path.relative(parent, candidate);
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
-
 
 function assertNotGitInternals(parent, candidate, label) {
   const rel = path.relative(parent, candidate).split(path.sep);
@@ -103,15 +105,20 @@ function realDirectory(label, candidate) {
  * single-line GITHUB_OUTPUT value or a child argv element (RC-105).
  */
 function assertResolvedPath(label, resolved) {
-  if (hasControlChar(resolved)) fail(`${label} resolves to a path containing a forbidden control character`);
+  if (hasControlChar(resolved))
+    fail(`${label} resolves to a path containing a forbidden control character`);
   return resolved;
 }
 
 function rejectAbsolute(label, input) {
   // ADR-022: roots stay contained. The hint names the supported invocation instead of
   // leaving a first-time consumer to infer it from the refusal.
-  const hint = label === "root" ? "; run from inside the target repository and pass a relative path, e.g. 'cd <repo> && l9-meta-injector inventory .'" : "";
-  if (path.isAbsolute(input)) fail(`${label} must be relative, got absolute path '${input}'${hint}`);
+  const hint =
+    label === "root"
+      ? "; run from inside the target repository and pass a relative path, e.g. 'cd <repo> && l9-meta-injector inventory .'"
+      : "";
+  if (path.isAbsolute(input))
+    fail(`${label} must be relative, got absolute path '${input}'${hint}`);
 }
 
 function resolveExistingContainedDirectory(parent, input, label) {
@@ -161,7 +168,10 @@ function parseCsvPatterns(raw) {
   const value = String(raw ?? "");
   if (value === "") return [];
   if (hasControlChar(value)) fail("omit contains a forbidden control character");
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function parseRepeatedValues(raw) {
@@ -183,7 +193,9 @@ function parseNamespaceGlobRule(pair) {
 }
 
 function sanitizeSegment(value, fallback) {
-  const clean = String(value ?? "").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
+  const clean = String(value ?? "")
+    .replace(/[^A-Za-z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   return clean || fallback;
 }
 
@@ -212,13 +224,21 @@ function resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, mode, n
 
 function assertModeShape(config) {
   const { mode } = config;
-  if ((mode === "check" || mode === "apply" || mode === "skills") && config.authority.length === 0) {
-    fail(`${mode} requires an explicit authority input; no repository-generic authority is assumed`);
+  if (
+    (mode === "check" || mode === "apply" || mode === "skills") &&
+    config.authority.length === 0
+  ) {
+    fail(
+      `${mode} requires an explicit authority input; no repository-generic authority is assumed`,
+    );
   }
   if (mode === "check") {
-    if (config.dryRun === false) fail("check is intrinsically read-only; dry-run=false is forbidden");
-    if (config.failOnIssues === false) fail("check is a drift gate; fail-on-issues=false is forbidden");
-    if (config.llmEnabled) fail("check forbids LLM assistance because expected state must be deterministic");
+    if (config.dryRun === false)
+      fail("check is intrinsically read-only; dry-run=false is forbidden");
+    if (config.failOnIssues === false)
+      fail("check is a drift gate; fail-on-issues=false is forbidden");
+    if (config.llmEnabled)
+      fail("check forbids LLM assistance because expected state must be deterministic");
   }
   if (mode === "apply" && config.dryRun) {
     fail("apply does not accept dry-run=true; use check for read-only drift evaluation");
@@ -227,7 +247,9 @@ function assertModeShape(config) {
   // failure an advisory mode could downgrade, so false would be accepted and ignored
   // (ADR-069 amending ADR-022).
   if (mode === "apply" && config.failOnIssues === false) {
-    fail("fail-on-issues=false is forbidden for apply: apply fails only on authority conflicts, which are always fatal");
+    fail(
+      "fail-on-issues=false is forbidden for apply: apply fails only on authority conflicts, which are always fatal",
+    );
   }
   if ((mode === "inventory" || mode === "skills") && config.failOnIssues === false) {
     fail(`fail-on-issues is not supported for ${mode}`);
@@ -244,8 +266,11 @@ function assertLlmConfig(config) {
     fail("llm=true requires llm-base-url, llm-model, and llm-api-key");
   }
   let url;
-  try { url = new URL(config.llmBaseUrl); }
-  catch { fail("llm-base-url must be an absolute URL"); }
+  try {
+    url = new URL(config.llmBaseUrl);
+  } catch {
+    fail("llm-base-url must be an absolute URL");
+  }
   if (url.protocol !== "https:" && !config.llmAllowInsecure) {
     fail("non-https llm-base-url requires llm-allow-insecure=true");
   }
@@ -258,12 +283,19 @@ function enforceModeRules(config) {
 
 function normalizeEnvironment(rawEnv) {
   const env = rawEnv ?? process.env;
-  const workspace = realDirectory("GITHUB_WORKSPACE", assertText("GITHUB_WORKSPACE", String(env.GITHUB_WORKSPACE ?? "")));
-  const actionPath = realDirectory("GITHUB_ACTION_PATH", assertText("GITHUB_ACTION_PATH", String(env.GITHUB_ACTION_PATH ?? "")));
+  const workspace = realDirectory(
+    "GITHUB_WORKSPACE",
+    assertText("GITHUB_WORKSPACE", String(env.GITHUB_WORKSPACE ?? "")),
+  );
+  const actionPath = realDirectory(
+    "GITHUB_ACTION_PATH",
+    assertText("GITHUB_ACTION_PATH", String(env.GITHUB_ACTION_PATH ?? "")),
+  );
   const modeResolution = resolveMode(env.L9_INPUT_MODE);
   const rootInput = String(env.L9_INPUT_ROOT ?? ".").trim() || ".";
   const targetRoot = resolveExistingContainedDirectory(workspace, rootInput, "root");
-  const outInput = String(env.L9_INPUT_OUT ?? ".l9-meta-injector-out").trim() || ".l9-meta-injector-out";
+  const outInput =
+    String(env.L9_INPUT_OUT ?? ".l9-meta-injector-out").trim() || ".l9-meta-injector-out";
   const outDir = resolveFutureContainedPath(targetRoot, outInput, "out");
 
   const defaultDryRun = modeResolution.mode === "inventory" || modeResolution.mode === "check";
@@ -271,19 +303,39 @@ function normalizeEnvironment(rawEnv) {
   const failOnIssues = parseBoolean("fail-on-issues", env.L9_INPUT_FAIL_ON_ISSUES, true);
   const llmEnabled = parseBoolean("llm", env.L9_INPUT_LLM, false);
   const uploadArtifact = parseBoolean("upload-artifact", env.L9_INPUT_UPLOAD_ARTIFACT, true);
-  const llmAllowInsecure = parseBoolean("llm-allow-insecure", env.L9_INPUT_LLM_ALLOW_INSECURE, false);
+  const llmAllowInsecure = parseBoolean(
+    "llm-allow-insecure",
+    env.L9_INPUT_LLM_ALLOW_INSECURE,
+    false,
+  );
 
   const namespaceRaw = String(env.L9_INPUT_NAMESPACE ?? "").trim();
-  const authorityRaw = assertText("authority", String(env.L9_INPUT_AUTHORITY ?? "").trim(), { allowEmpty: true }).trim();
-  const namespaceGlobRules = parseRepeatedValues(env.L9_INPUT_NAMESPACE_GLOBS).map(parseNamespaceGlobRule);
-  const identity = resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, modeResolution.mode, namespaceGlobRules);
+  const authorityRaw = assertText("authority", String(env.L9_INPUT_AUTHORITY ?? "").trim(), {
+    allowEmpty: true,
+  }).trim();
+  const namespaceGlobRules = parseRepeatedValues(env.L9_INPUT_NAMESPACE_GLOBS).map(
+    parseNamespaceGlobRule,
+  );
+  const identity = resolveDispatchIdentity(
+    targetRoot,
+    authorityRaw,
+    namespaceRaw,
+    modeResolution.mode,
+    namespaceGlobRules,
+  );
   const namespace = assertText("namespace", identity.namespace);
-  const authority = assertText("authority", identity.authority, { allowEmpty: modeResolution.mode === "inventory" }).trim();
+  const authority = assertText("authority", identity.authority, {
+    allowEmpty: modeResolution.mode === "inventory",
+  }).trim();
   const glob = assertText("glob", String(env.L9_INPUT_GLOB ?? "**/*").trim() || "**/*");
   const omitPatterns = parseCsvPatterns(env.L9_INPUT_OMIT);
   const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
   const nearDupThreshold = parseBoundedNumber("near-dup", env.L9_INPUT_NEAR_DUP, 0.9);
-  const hashPrefixLength = parseBoundedNumber("hash-prefix-length", env.L9_INPUT_HASH_PREFIX_LENGTH, 16);
+  const hashPrefixLength = parseBoundedNumber(
+    "hash-prefix-length",
+    env.L9_INPUT_HASH_PREFIX_LENGTH,
+    16,
+  );
 
   const runnerTempRaw = String(env.RUNNER_TEMP ?? "").trim();
   let reportPath;
@@ -291,7 +343,11 @@ function normalizeEnvironment(rawEnv) {
     const runnerTemp = realDirectory("RUNNER_TEMP", assertText("RUNNER_TEMP", runnerTempRaw));
     const runId = sanitizeSegment(env.GITHUB_RUN_ID, "local");
     const actionId = sanitizeSegment(env.GITHUB_ACTION, "run");
-    const reportDir = resolveFutureContainedPath(runnerTemp, `l9-meta-injector-check-${runId}-${actionId}`, "check report directory");
+    const reportDir = resolveFutureContainedPath(
+      runnerTemp,
+      `l9-meta-injector-check-${runId}-${actionId}`,
+      "check report directory",
+    );
     reportPath = path.join(reportDir, "check-report.json");
   }
 
@@ -316,8 +372,12 @@ function normalizeEnvironment(rawEnv) {
     omitPatterns,
     llmEnabled,
     uploadArtifact,
-    llmBaseUrl: assertText("llm-base-url", String(env.L9_INPUT_LLM_BASE_URL ?? "").trim(), { allowEmpty: true }).trim(),
-    llmModel: assertText("llm-model", String(env.L9_INPUT_LLM_MODEL ?? "").trim(), { allowEmpty: true }).trim(),
+    llmBaseUrl: assertText("llm-base-url", String(env.L9_INPUT_LLM_BASE_URL ?? "").trim(), {
+      allowEmpty: true,
+    }).trim(),
+    llmModel: assertText("llm-model", String(env.L9_INPUT_LLM_MODEL ?? "").trim(), {
+      allowEmpty: true,
+    }).trim(),
     llmApiKey: String(env.L9_INPUT_LLM_API_KEY ?? ""),
     llmAllowInsecure,
   };
@@ -326,11 +386,23 @@ function normalizeEnvironment(rawEnv) {
   return config;
 }
 
-const BOOLEAN_OPTIONS = Object.freeze(["--dry-run", "--fail-on-issues", "--llm", "--llm-allow-insecure"]);
+const BOOLEAN_OPTIONS = Object.freeze([
+  "--dry-run",
+  "--fail-on-issues",
+  "--llm",
+  "--llm-allow-insecure",
+]);
 const REPEATABLE_OPTIONS = Object.freeze(["--omit", "--namespace-glob"]);
 const VALUE_OPTIONS = Object.freeze([
-  "--out", "--glob", "--namespace", "--authority", "--near-dup", "--hash-prefix-length",
-  "--llm-base-url", "--llm-model", "--llm-api-key",
+  "--out",
+  "--glob",
+  "--namespace",
+  "--authority",
+  "--near-dup",
+  "--hash-prefix-length",
+  "--llm-base-url",
+  "--llm-model",
+  "--llm-api-key",
 ]);
 
 /** The dispatcher's option declaration, parsed by the shared strict core (ADR-069). */
@@ -358,7 +430,8 @@ function parseArgOptions(args) {
   return parseOptionArgv(args, DISPATCH_OPTION_SPEC, fail);
 }
 
-const USAGE_LINE = "usage: l9-meta-injector <inventory|check|apply|skills|pipeline> <root> [options]";
+const USAGE_LINE =
+  "usage: l9-meta-injector <inventory|check|apply|skills|pipeline> <root> [options]";
 const HELP_TEXT = `${USAGE_LINE}
 
 Run from inside the target repository; <root> must be a relative path inside the
@@ -408,20 +481,41 @@ function parseCommandLine(argv, env = process.env) {
   const dryRun = parseBoolean("dry-run", values.get("--dry-run"), defaultDryRun);
   const failOnIssues = parseBoolean("fail-on-issues", values.get("--fail-on-issues"), true);
   const llmEnabled = parseBoolean("llm", values.get("--llm"), false);
-  const llmAllowInsecure = parseBoolean("llm-allow-insecure", values.get("--llm-allow-insecure"), false);
+  const llmAllowInsecure = parseBoolean(
+    "llm-allow-insecure",
+    values.get("--llm-allow-insecure"),
+    false,
+  );
   const namespaceRaw = values.get("--namespace") ?? "";
-  const authorityRaw = assertText("authority", values.get("--authority") ?? "", { allowEmpty: true }).trim();
+  const authorityRaw = assertText("authority", values.get("--authority") ?? "", {
+    allowEmpty: true,
+  }).trim();
   const namespaceGlobRules = (repeated.get("--namespace-glob") ?? []).map(parseNamespaceGlobRule);
-  const identity = resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, modeResolution.mode, namespaceGlobRules);
+  const identity = resolveDispatchIdentity(
+    targetRoot,
+    authorityRaw,
+    namespaceRaw,
+    modeResolution.mode,
+    namespaceGlobRules,
+  );
   const namespace = assertText("namespace", identity.namespace);
-  const authority = assertText("authority", identity.authority, { allowEmpty: modeResolution.mode === "inventory" }).trim();
+  const authority = assertText("authority", identity.authority, {
+    allowEmpty: modeResolution.mode === "inventory",
+  }).trim();
   const glob = assertText("glob", values.get("--glob") ?? "**/*");
   const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
   const nearDupThreshold = parseBoundedNumber("near-dup", values.get("--near-dup"), 0.9);
-  const hashPrefixLength = parseBoundedNumber("hash-prefix-length", values.get("--hash-prefix-length"), 16);
+  const hashPrefixLength = parseBoundedNumber(
+    "hash-prefix-length",
+    values.get("--hash-prefix-length"),
+    16,
+  );
   let reportPath;
   if (modeResolution.mode === "check") {
-    const temp = realDirectory("temporary directory", env.RUNNER_TEMP || require("node:os").tmpdir());
+    const temp = realDirectory(
+      "temporary directory",
+      env.RUNNER_TEMP || require("node:os").tmpdir(),
+    );
     reportPath = path.join(temp, `l9-meta-injector-check-${process.pid}.json`);
   }
   const config = {
@@ -477,17 +571,42 @@ function resolveScriptAndArgs(config, scripts) {
     return { script: path.join(scripts, "inventory.js"), args };
   }
   if (config.mode === "check") {
-    const args = [...commonArgs(config), "--authority", config.authority, "--report", config.reportPath,
-      "--near-dup", String(config.nearDupThreshold), "--hash-prefix-length", String(config.hashPrefixLength)];
+    const args = [
+      ...commonArgs(config),
+      "--authority",
+      config.authority,
+      "--report",
+      config.reportPath,
+      "--near-dup",
+      String(config.nearDupThreshold),
+      "--hash-prefix-length",
+      String(config.hashPrefixLength),
+    ];
     return { script: path.join(scripts, "check-cli.js"), args };
   }
   if (config.mode === "apply") {
-    const args = [...commonArgs(config), "--authority", config.authority, "--out", config.outDir,
-      "--near-dup", String(config.nearDupThreshold), "--hash-prefix-length", String(config.hashPrefixLength),
-      ...llmArgs(config)];
+    const args = [
+      ...commonArgs(config),
+      "--authority",
+      config.authority,
+      "--out",
+      config.outDir,
+      "--near-dup",
+      String(config.nearDupThreshold),
+      "--hash-prefix-length",
+      String(config.hashPrefixLength),
+      ...llmArgs(config),
+    ];
     return { script: path.join(scripts, "apply-cli.js"), args };
   }
-  const args = [config.targetRoot, "--authority", config.authority, "--out", config.outDir, ...llmArgs(config)];
+  const args = [
+    config.targetRoot,
+    "--authority",
+    config.authority,
+    "--out",
+    config.outDir,
+    ...llmArgs(config),
+  ];
   for (const pattern of config.omitPatterns) args.push("--omit", pattern);
   if (config.dryRun) args.push("--dry-run");
   return { script: path.join(scripts, "skills-cli.js"), args };
@@ -525,18 +644,26 @@ function buildInvocation(config) {
  */
 const SUMMARY_GRAMMARS = Object.freeze({
   inventory: /^inventory: (\d+) entries \((\d+) files, (\d+) folders\)$/,
-  check: /^check-cli: scanned=(\d+) planned=(\d+) drift=(\d+) authorityConflicts=(\d+) passed=(true|false)$/,
-  apply: /^apply-cli: scanned=(\d+) planned=(\d+) changed=(\d+) inlineChanged=(\d+) metadataIndexChanged=(\d+) passed=(true|false)$/,
-  skills: /^skills-cli: considered=(\d+) changed=(\d+) unchanged=(\d+) authorityResolved=(true|false) repositoryMutated=(true|false)$/,
+  check:
+    /^check-cli: scanned=(\d+) planned=(\d+) drift=(\d+) authorityConflicts=(\d+) passed=(true|false)$/,
+  apply:
+    /^apply-cli: scanned=(\d+) planned=(\d+) changed=(\d+) inlineChanged=(\d+) metadataIndexChanged=(\d+) passed=(true|false)$/,
+  skills:
+    /^skills-cli: considered=(\d+) changed=(\d+) unchanged=(\d+) authorityResolved=(true|false) repositoryMutated=(true|false)$/,
 });
 
 /** Mode-fixed output projection of a matched summary; `null` means the summary is absent. */
 const SUMMARY_OUTPUTS = Object.freeze({
   inventory: (m) => ({ scanned: m ? m[1] : "0", injected: "0", verificationPassed: "n-a" }),
-  check: (m) => ({ scanned: m ? m[1] : "0", injected: "0", verificationPassed: m ? m[5] : "false" }),
-  apply: (m) => (m
-    ? { scanned: m[1], injected: m[3], verificationPassed: m[6] }
-    : { scanned: "0", injected: "0", verificationPassed: "false" }),
+  check: (m) => ({
+    scanned: m ? m[1] : "0",
+    injected: "0",
+    verificationPassed: m ? m[5] : "false",
+  }),
+  apply: (m) =>
+    m
+      ? { scanned: m[1], injected: m[3], verificationPassed: m[6] }
+      : { scanned: "0", injected: "0", verificationPassed: "false" },
   skills: (m) => ({ scanned: m ? m[1] : "0", injected: m ? m[2] : "0", verificationPassed: "n-a" }),
 });
 

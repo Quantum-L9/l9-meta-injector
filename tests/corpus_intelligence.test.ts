@@ -13,14 +13,14 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  type BuildCorpusIntelligenceInput,
+  buildCorpusIntelligenceBundle,
+  buildCorpusIntelligencePacket,
   CORPUS_INTELLIGENCE_PACKET_TYPE,
   CORPUS_INTELLIGENCE_PACKET_VERSION,
   CORPUS_PAYLOAD_FIELDS,
-  type BuildCorpusIntelligenceInput,
-  type CorpusIntelligencePayload,
   CorpusIntelligenceError,
-  buildCorpusIntelligenceBundle,
-  buildCorpusIntelligencePacket,
+  type CorpusIntelligencePayload,
   corpusPayloadPath,
   validateCorpusIntelligencePacket,
   writeCorpusIntelligenceBundle,
@@ -48,8 +48,16 @@ function root(overrides: Record<string, unknown> = {}) {
       source_snapshot: { revision: "rev-1" },
       payload: {
         artifacts: [
-          { artifact_id: ARTIFACT_A, source_path: "docs/a.md", content_hash: `sha256:${"1".repeat(64)}` },
-          { artifact_id: ARTIFACT_B, source_path: "docs/b.md", content_hash: `sha256:${"2".repeat(64)}` },
+          {
+            artifact_id: ARTIFACT_A,
+            source_path: "docs/a.md",
+            content_hash: `sha256:${"1".repeat(64)}`,
+          },
+          {
+            artifact_id: ARTIFACT_B,
+            source_path: "docs/b.md",
+            content_hash: `sha256:${"2".repeat(64)}`,
+          },
         ],
       },
     },
@@ -144,7 +152,9 @@ describe("corpus intelligence packet", () => {
       content_hash: `sha256:${"3".repeat(64)}`,
     });
     const changed = buildCorpusIntelligencePacket(input(payload)).packet;
-    expect(changed.semantic_hash).not.toBe(buildCorpusIntelligencePacket(input()).packet.semantic_hash);
+    expect(changed.semantic_hash).not.toBe(
+      buildCorpusIntelligencePacket(input()).packet.semantic_hash,
+    );
   });
 
   it("refuses an analysis over no roots", () => {
@@ -182,7 +192,9 @@ describe("corpus intelligence packet", () => {
       analysis_profile: PROFILE,
       upstream_candidate_id: "candidate:1",
     });
-    expect(() => buildCorpusIntelligencePacket(input(payload))).toThrow(/expected 'TOPIC_CANDIDATE'/);
+    expect(() => buildCorpusIntelligencePacket(input(payload))).toThrow(
+      /expected 'TOPIC_CANDIDATE'/,
+    );
   });
 
   it("refuses a line locator for a format that has no lines", () => {
@@ -320,7 +332,8 @@ describe("corpus intelligence packet", () => {
       const file = bundle.files.find((entry) => entry.path === corpusPayloadPath(field));
       expect(file, `bundle is missing ${field}`).toBeDefined();
       const digest =
-        "sha256:" + crypto.createHash("sha256").update(Buffer.from(file!.contents, "utf8")).digest("hex");
+        "sha256:" +
+        crypto.createHash("sha256").update(Buffer.from(file!.contents, "utf8")).digest("hex");
       expect(packet.payload_hashes[field], `payload_hashes.${field}`).toBe(digest);
       expect(file!.contents.endsWith("\n")).toBe(true);
     }
@@ -386,13 +399,24 @@ describe("lexical cluster cross_archive reads parent-chain ancestry (G06)", () =
         semanticAnalysis: false,
       });
       expect(result.semantic).toBeNull();
-      const built = corpusIntelligenceInput(result, { producerVersion: "test", createdAt: "2026-01-01T00:00:00.000Z" });
+      const built = corpusIntelligenceInput(result, {
+        producerVersion: "test",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
       const project = built.payload.project_candidates.find((cluster) =>
-        result.candidates.project_candidates.some((candidate) =>
-          candidate.candidate_id === cluster.candidate_id && candidate.project_key === "project:widget"));
+        result.candidates.project_candidates.some(
+          (candidate) =>
+            candidate.candidate_id === cluster.candidate_id &&
+            candidate.project_key === "project:widget",
+        ),
+      );
       const topic = built.payload.topic_candidates.find((cluster) => {
-        const source = result.candidates.topic_candidates.find((candidate) => candidate.candidate_id === cluster.candidate_id);
-        return source !== undefined && source.member_paths.some((member) => member.endsWith("x.md"));
+        const source = result.candidates.topic_candidates.find(
+          (candidate) => candidate.candidate_id === cluster.candidate_id,
+        );
+        return (
+          source !== undefined && source.member_paths.some((member) => member.endsWith("x.md"))
+        );
       });
       return { project, topic };
     } finally {

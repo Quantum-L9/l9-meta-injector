@@ -11,20 +11,30 @@ if (git === null) throw new Error("Git fixtures require Git");
 
 export function fixtureEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(process.env)) if (!key.toUpperCase().startsWith("GIT_")) env[key] = value;
+  for (const [key, value] of Object.entries(process.env))
+    if (!key.toUpperCase().startsWith("GIT_")) env[key] = value;
   return {
-    ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
-    GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-    GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.invalid",
-    GIT_AUTHOR_DATE: "2020-01-01T00:00:00+00:00", GIT_COMMITTER_DATE: "2020-01-01T00:00:00+00:00",
+    ...env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_AUTHOR_NAME: "Fixture",
+    GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+    GIT_COMMITTER_NAME: "Fixture",
+    GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+    GIT_AUTHOR_DATE: "2020-01-01T00:00:00+00:00",
+    GIT_COMMITTER_DATE: "2020-01-01T00:00:00+00:00",
   };
 }
 
 export function fixtureGit(root: string, args: readonly string[], input?: string | Buffer): Buffer {
   const result = spawnSync(git!, [...args], {
-    cwd: root, env: fixtureEnvironment(), input, maxBuffer: 16 * 1024 * 1024,
+    cwd: root,
+    env: fixtureEnvironment(),
+    input,
+    maxBuffer: 16 * 1024 * 1024,
   });
-  if (result.error || result.status !== 0) throw new Error(`Fixture git ${args.join(" ")} failed: ${result.stderr?.toString()}`);
+  if (result.error || result.status !== 0)
+    throw new Error(`Fixture git ${args.join(" ")} failed: ${result.stderr?.toString()}`);
   return result.stdout;
 }
 
@@ -40,7 +50,13 @@ export function cleanupGitFixtures(): void {
 
 export function fixtureRepository(format: "sha1" | "sha256" = "sha1", bare = false): string {
   const root = scratchDirectory();
-  fixtureGit(root, ["init", ...(bare ? ["--bare"] : []), `--object-format=${format}`, "--initial-branch=main", "."]);
+  fixtureGit(root, [
+    "init",
+    ...(bare ? ["--bare"] : []),
+    `--object-format=${format}`,
+    "--initial-branch=main",
+    ".",
+  ]);
   return root;
 }
 
@@ -67,7 +83,10 @@ export function fixtureTree(root: string, leaves: readonly FixtureLeaf[]): strin
     const parts: Buffer[] = [];
     let start = 0;
     for (let i = 0; i <= raw.length; i += 1) {
-      if (i === raw.length || raw[i] === 47) { parts.push(raw.subarray(start, i)); start = i + 1; }
+      if (i === raw.length || raw[i] === 47) {
+        parts.push(raw.subarray(start, i));
+        start = i + 1;
+      }
     }
     let node = tree;
     for (const name of parts.slice(0, -1)) {
@@ -80,19 +99,28 @@ export function fixtureTree(root: string, leaves: readonly FixtureLeaf[]): strin
     node.leaves.push({ name: parts.at(-1)!, mode, oid });
   }
   function write(node: TreeNode): string {
-    const rows = node.leaves.map(({ name, mode, oid }) => Buffer.concat([
-      Buffer.from(`${mode} ${mode === "160000" ? "commit" : "blob"} ${oid}\t`), name, Buffer.from([0]),
-    ]));
-    for (const { name, node: child } of node.dirs.values()) rows.push(Buffer.concat([
-      Buffer.from(`040000 tree ${write(child)}\t`), name, Buffer.from([0]),
-    ]));
-    return fixtureGit(root, ["mktree", "-z", "--missing"], Buffer.concat(rows)).toString("ascii").trim();
+    const rows = node.leaves.map(({ name, mode, oid }) =>
+      Buffer.concat([
+        Buffer.from(`${mode} ${mode === "160000" ? "commit" : "blob"} ${oid}\t`),
+        name,
+        Buffer.from([0]),
+      ]),
+    );
+    for (const { name, node: child } of node.dirs.values())
+      rows.push(
+        Buffer.concat([Buffer.from(`040000 tree ${write(child)}\t`), name, Buffer.from([0])]),
+      );
+    return fixtureGit(root, ["mktree", "-z", "--missing"], Buffer.concat(rows))
+      .toString("ascii")
+      .trim();
   }
   return write(tree);
 }
 
 export function fixtureCommit(root: string, tree: string, parent?: string): string {
-  return fixtureGit(root, ["commit-tree", tree, ...(parent ? ["-p", parent] : [])], "fixture\n").toString("ascii").trim();
+  return fixtureGit(root, ["commit-tree", tree, ...(parent ? ["-p", parent] : [])], "fixture\n")
+    .toString("ascii")
+    .trim();
 }
 
 export function setFixtureHead(root: string, revision: string, checkout = false): void {
@@ -107,5 +135,10 @@ export function writeFixtureFile(root: string, relative: string, contents: strin
 }
 
 export function supportsSha256(): boolean {
-  try { fixtureRepository("sha256"); return true; } catch { return false; }
+  try {
+    fixtureRepository("sha256");
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -9,12 +9,14 @@
 // The positive cases exist to prove the refusals are not achieved by finding
 // nothing at all.
 import { describe, expect, it } from "vitest";
-import { runSemanticAnalysis } from "../src/corpus_semantic_run";
 import { classifyPair } from "../src/corpus_fusion";
-import { buildFeatureViews } from "../src/corpus_semantics";
+import type { EmbeddingPairScore } from "../src/corpus_pairs";
 import { buildSemanticPairs, referenceFixtureComparison } from "../src/corpus_pairs";
-import { buildReasoningEvidencePacks } from "../src/corpus_reasoning";
 import type { PackAssertion, ReasoningEvidencePack } from "../src/corpus_reasoning";
+import { buildReasoningEvidencePacks } from "../src/corpus_reasoning";
+import { runSemanticAnalysis } from "../src/corpus_semantic_run";
+import type { SemanticArtifactInput } from "../src/corpus_semantics";
+import { buildFeatureViews } from "../src/corpus_semantics";
 import {
   artifact,
   consolidationSet,
@@ -27,12 +29,13 @@ import {
   statusConflict,
   supersession,
 } from "./helpers/semantic_fixtures";
-import type { SemanticArtifactInput } from "../src/corpus_semantics";
-import type { EmbeddingPairScore } from "../src/corpus_pairs";
 
 function run(
   artifacts: readonly SemanticArtifactInput[],
-  extra: { embeddingPairs?: EmbeddingPairScore[]; nearDuplicatePairs?: { artifact_a_id: string; artifact_b_id: string; score: number }[] } = {},
+  extra: {
+    embeddingPairs?: EmbeddingPairScore[];
+    nearDuplicatePairs?: { artifact_a_id: string; artifact_b_id: string; score: number }[];
+  } = {},
 ) {
   return runSemanticAnalysis({
     corpusSnapshotId: "snapshot:test",
@@ -61,7 +64,12 @@ describe("explicit same project", () => {
     for (const identifier of result.projects.candidates[0]!.declared_identifiers) {
       expect(identifier).toBe("world-model");
     }
-    for (const forbidden of ["project_name", "canonical_copy", "recommended_action", "merge_into"]) {
+    for (const forbidden of [
+      "project_name",
+      "canonical_copy",
+      "recommended_action",
+      "merge_into",
+    ]) {
       expect(rendered).not.toContain(forbidden);
     }
   });
@@ -259,7 +267,11 @@ describe("consolidation", () => {
     const result = run(consolidationSet());
     const rendered = JSON.stringify(result.consolidations);
     for (const forbidden of [
-      "delete_these_files", "keeper", "canonical_copy", "merge_into", "recommended_action",
+      "delete_these_files",
+      "keeper",
+      "canonical_copy",
+      "merge_into",
+      "recommended_action",
     ]) {
       expect(rendered).not.toContain(forbidden);
     }
@@ -268,20 +280,33 @@ describe("consolidation", () => {
 
 describe("the whole emitted surface", () => {
   const all = [
-    ...explicitSameProject(), ...lexicalRelated(), ...statusConflict(),
-    ...consolidationSet(), ...exactDuplicates(),
+    ...explicitSameProject(),
+    ...lexicalRelated(),
+    ...statusConflict(),
+    ...consolidationSet(),
+    ...exactDuplicates(),
   ];
 
   it("invents no strategy judgement anywhere", () => {
     const result = run(all);
     const rendered = JSON.stringify([
-      result.relations, result.topics, result.projects,
-      result.consolidations, result.reasoningCandidates, result.evidencePacks,
+      result.relations,
+      result.topics,
+      result.projects,
+      result.consolidations,
+      result.reasoningCandidates,
+      result.evidencePacks,
     ]);
     for (const forbidden of [
-      "build_priority", "strategic_value", "percent_complete",
-      "production_readiness_score", "abandonment_probability",
-      "should_merge", "should_delete", "obsolete", "abandoned",
+      "build_priority",
+      "strategic_value",
+      "percent_complete",
+      "production_readiness_score",
+      "abandonment_probability",
+      "should_merge",
+      "should_delete",
+      "obsolete",
+      "abandoned",
     ]) {
       expect(rendered).not.toContain(forbidden);
     }
@@ -293,11 +318,13 @@ describe("the whole emitted surface", () => {
     const pairIds = new Set(result.relations.pairs.map((pair) => pair.pair_id));
 
     for (const candidate of [...result.topics.candidates, ...result.projects.candidates]) {
-      for (const member of candidate.member_artifact_ids) expect(artifactIds.has(member)).toBe(true);
+      for (const member of candidate.member_artifact_ids)
+        expect(artifactIds.has(member)).toBe(true);
       for (const pairId of candidate.supporting_pair_ids) expect(pairIds.has(pairId)).toBe(true);
     }
     for (const candidate of result.consolidations.candidates) {
-      for (const member of candidate.member_artifact_ids) expect(artifactIds.has(member)).toBe(true);
+      for (const member of candidate.member_artifact_ids)
+        expect(artifactIds.has(member)).toBe(true);
     }
   });
 
@@ -311,9 +338,13 @@ describe("the whole emitted surface", () => {
       expect(row.reason.length).toBeGreaterThan(0);
       const pack = packByCandidate.get(row.reasoning_candidate_id);
       expect(pack).toBeDefined();
-      expect(pack!.artifacts.length).toBeLessThanOrEqual(pack!.pack_profile.budget.maxArtifactsPerPack);
+      expect(pack!.artifacts.length).toBeLessThanOrEqual(
+        pack!.pack_profile.budget.maxArtifactsPerPack,
+      );
       for (const entry of pack!.artifacts) {
-        expect(entry.excerpts.length).toBeLessThanOrEqual(pack!.pack_profile.budget.maxExcerptsPerArtifact);
+        expect(entry.excerpts.length).toBeLessThanOrEqual(
+          pack!.pack_profile.budget.maxExcerptsPerArtifact,
+        );
       }
     }
   });
@@ -325,7 +356,9 @@ describe("the whole emitted surface", () => {
     expect(JSON.stringify(second.topics)).toBe(JSON.stringify(first.topics));
     expect(JSON.stringify(second.projects)).toBe(JSON.stringify(first.projects));
     expect(JSON.stringify(second.consolidations)).toBe(JSON.stringify(first.consolidations));
-    expect(JSON.stringify(second.reasoningCandidates)).toBe(JSON.stringify(first.reasoningCandidates));
+    expect(JSON.stringify(second.reasoningCandidates)).toBe(
+      JSON.stringify(first.reasoningCandidates),
+    );
     expect(JSON.stringify(second.evidencePacks)).toBe(JSON.stringify(first.evidencePacks));
   });
 
@@ -337,18 +370,24 @@ describe("the whole emitted surface", () => {
     }));
     const here = run(all);
     const there = run(relocated);
-    expect(there.topics.candidates.map((c) => c.candidate_id))
-      .toEqual(here.topics.candidates.map((c) => c.candidate_id));
-    expect(there.projects.candidates.map((c) => c.candidate_id))
-      .toEqual(here.projects.candidates.map((c) => c.candidate_id));
+    expect(there.topics.candidates.map((c) => c.candidate_id)).toEqual(
+      here.topics.candidates.map((c) => c.candidate_id),
+    );
+    expect(there.projects.candidates.map((c) => c.candidate_id)).toEqual(
+      here.projects.candidates.map((c) => c.candidate_id),
+    );
   });
 });
 
 describe("candidate generation by index", () => {
   it("finds what exhaustive scoring finds, on a corpus small enough to check both", () => {
     const all = [
-      ...explicitSameProject(), ...lexicalRelated(), ...statusConflict(),
-      ...consolidationSet(), ...exactDuplicates(), ...genericOverlapFalsePositive(),
+      ...explicitSameProject(),
+      ...lexicalRelated(),
+      ...statusConflict(),
+      ...consolidationSet(),
+      ...exactDuplicates(),
+      ...genericOverlapFalsePositive(),
     ];
     const views = buildFeatureViews(all);
     const comparison = referenceFixtureComparison({ views });
@@ -383,7 +422,8 @@ describe("archive context on its own", () => {
     const views = buildFeatureViews(artifacts);
     const pairs = buildSemanticPairs({ views });
     const contextOnly = pairs.pairs.filter((pair) =>
-      pair.signals.every((signal) => signal.kind === "archive_context"));
+      pair.signals.every((signal) => signal.kind === "archive_context"),
+    );
 
     for (const pair of contextOnly) {
       expect(classifyPair(pair).context_only).toBe(true);
@@ -406,15 +446,23 @@ describe("the reasoning pack character budget bounds the rendered pack", () => {
     reason: "test",
     member_artifact_ids: ["big-a", "big-b"],
     grounding_refs: {
-      readiness_evidence_ref: "r", corpus_coverage_ref: "c", corpus_snapshot_ref: "s",
+      readiness_evidence_ref: "r",
+      corpus_coverage_ref: "c",
+      corpus_snapshot_ref: "s",
     },
     routing_profile: {
-      reasoning_routing_profile_id: "p", reasoning_routing_profile_version: "1",
+      reasoning_routing_profile_id: "p",
+      reasoning_routing_profile_version: "1",
       reasoning_routing_profile_hash: "h",
     },
   };
 
-  function assertion(id: string, index: number, objectLength: number, excerptLength = 40): PackAssertion {
+  function assertion(
+    id: string,
+    index: number,
+    objectLength: number,
+    excerptLength = 40,
+  ): PackAssertion {
     return {
       assertion_id: `assert:${id}:${String(index).padStart(3, "0")}`,
       predicate: index === 0 ? "work.status" : "work.references",
@@ -430,12 +478,19 @@ describe("the reasoning pack character budget bounds the rendered pack", () => {
     let total = 0;
     for (const artifact of pack.artifacts) {
       for (const excerpt of artifact.excerpts) {
-        total += excerpt.object.length + excerpt.source_path.length + excerpt.evidence_excerpt.length;
+        total +=
+          excerpt.object.length + excerpt.source_path.length + excerpt.evidence_excerpt.length;
       }
       for (const list of [
-        artifact.titles, artifact.selected_headings, artifact.statuses, artifact.work_kinds,
-        artifact.tasks_summary.open_terms, artifact.milestones, artifact.explicit_dependencies,
-        artifact.explicit_references, artifact.supersession_assertions,
+        artifact.titles,
+        artifact.selected_headings,
+        artifact.statuses,
+        artifact.work_kinds,
+        artifact.tasks_summary.open_terms,
+        artifact.milestones,
+        artifact.explicit_dependencies,
+        artifact.explicit_references,
+        artifact.supersession_assertions,
       ]) {
         for (const entry of list) total += entry.length;
       }
@@ -444,10 +499,19 @@ describe("the reasoning pack character budget bounds the rendered pack", () => {
   }
 
   function bigInputs() {
-    const references = Array.from({ length: 400 }, (_, i) => `refs/target-${String(i).padStart(3, "0")}.md`);
-    const artifacts = ["big-a", "big-b"].map((id) => artifact({
-      id, path: `${id}/doc.md`, title: `Big ${id}`, status: "WIP", references,
-    }));
+    const references = Array.from(
+      { length: 400 },
+      (_, i) => `refs/target-${String(i).padStart(3, "0")}.md`,
+    );
+    const artifacts = ["big-a", "big-b"].map((id) =>
+      artifact({
+        id,
+        path: `${id}/doc.md`,
+        title: `Big ${id}`,
+        status: "WIP",
+        references,
+      }),
+    );
     const views = buildFeatureViews(artifacts);
     const assertions = new Map<string, PackAssertion[]>(
       ["big-a", "big-b"].map((id) => [id, [0, 1, 2].map((i) => assertion(id, i, 5_000))]),
@@ -458,7 +522,10 @@ describe("the reasoning pack character budget bounds the rendered pack", () => {
   it("REG-WU-053-RC-082-a: assertion objects and long lists are charged, and what is left out is counted", () => {
     const { views, assertions } = bigInputs();
     const [pack] = buildReasoningEvidencePacks({
-      reasoningCandidates: [ROW], views, pairs: [], assertionsByArtifact: assertions,
+      reasoningCandidates: [ROW],
+      views,
+      pairs: [],
+      assertionsByArtifact: assertions,
       budget: { maxTotalPackCharacters: 1_000 },
     });
     expect(pack).toBeDefined();
@@ -472,8 +539,13 @@ describe("the reasoning pack character budget bounds the rendered pack", () => {
         original += entry.object.length + entry.source_path.length + entry.evidence_excerpt.length;
       }
       for (const list of [
-        view.normalized_title_tokens, view.normalized_heading_tokens, view.statuses, view.kinds,
-        view.task_terms, view.milestone_terms, view.declared_dependencies,
+        view.normalized_title_tokens,
+        view.normalized_heading_tokens,
+        view.statuses,
+        view.kinds,
+        view.task_terms,
+        view.milestone_terms,
+        view.declared_dependencies,
         view.normalized_reference_targets,
         view.supersession_declarations.map((d) => `${d.predicate} ${d.object}`),
       ]) {
@@ -492,23 +564,31 @@ describe("the reasoning pack character budget bounds the rendered pack", () => {
     ]);
     const [pack] = buildReasoningEvidencePacks({
       reasoningCandidates: [{ ...ROW, member_artifact_ids: ["ten"] }],
-      views, pairs: [], assertionsByArtifact: assertions,
+      views,
+      pairs: [],
+      assertionsByArtifact: assertions,
       budget: { maxExcerptsPerArtifact: 6 },
     });
     expect(pack!.artifacts[0]!.excerpts).toHaveLength(6);
     expect(pack!.truncation.excerpts_omitted).toBe(4);
     expect(pack!.truncation.truncated).toBe(true);
-    const dropped = (assertions.get("ten") ?? []).slice(6)
+    const dropped = (assertions.get("ten") ?? [])
+      .slice(6)
       .reduce((sum, entry) => sum + entry.evidence_excerpt.length, 0);
     expect(pack!.truncation.characters_omitted).toBeGreaterThanOrEqual(dropped);
   });
 
   it("REG-WU-053-RC-082-c: a pack inside its budget is untouched", () => {
     const result = run(statusConflict());
-    const pack = result.evidencePacks.find((entry) => entry.member_artifact_ids.includes("status-a"));
+    const pack = result.evidencePacks.find((entry) =>
+      entry.member_artifact_ids.includes("status-a"),
+    );
     expect(pack).toBeDefined();
     expect(pack!.truncation).toMatchObject({
-      truncated: false, artifacts_omitted: 0, excerpts_omitted: 0, characters_omitted: 0,
+      truncated: false,
+      artifacts_omitted: 0,
+      excerpts_omitted: 0,
+      characters_omitted: 0,
     });
     // Every list carries the view's whole content.
     const byId = new Map(result.views.map((view) => [view.artifact_id, view]));

@@ -41,8 +41,8 @@ exports.stripExistingFrontMatter = stripExistingFrontMatter;
 // extract.ts — Structured-grammar extraction: AST/regex for code, frontmatter for .md
 // Rule: parse what has grammar; for prose fields return UNKNOWN (assist.ts fills those).
 const crypto = __importStar(require("node:crypto"));
-const schema_1 = require("./schema");
 const llm_1 = require("./llm");
+const schema_1 = require("./schema");
 function contentHash(text) {
     return crypto.createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -56,7 +56,9 @@ function extractList(body, heading) {
     const start = m.index + m[0].length;
     const nextHeading = /\n## /;
     const nextMatch = nextHeading.exec(body.slice(start));
-    const section = nextMatch ? body.slice(start, start + (nextMatch.index ?? body.length)) : body.slice(start);
+    const section = nextMatch
+        ? body.slice(start, start + (nextMatch.index ?? body.length))
+        : body.slice(start);
     const items = section.match(/^[-*]\s+.+/gm)?.map((l) => l.replace(/^[-*]\s+/, "").trim()) ?? [];
     return items.length > 0 ? items : schema_1.UNKNOWN;
 }
@@ -73,14 +75,24 @@ function extractScalar(body, patterns) {
 function extract(body) {
     return {
         role: extractScalar(body, [/^##\s+Role[ \t]*\n+([^\n#]+)/m, /\*\*Role\*\*:?\s*([^\n]+)/]),
-        objective: extractScalar(body, [/^##\s+Objective[ \t]*\n+([^\n#]+)/m, /\*\*Objective\*\*:?\s*([^\n]+)/]),
+        objective: extractScalar(body, [
+            /^##\s+Objective[ \t]*\n+([^\n#]+)/m,
+            /\*\*Objective\*\*:?\s*([^\n]+)/,
+        ]),
         constraints: extractList(body, /^##\s+Constraints?\s*$/m),
         validationGates: extractList(body, /^##\s+Validation Gates?\s*$/m),
         stopConditions: extractList(body, /^##\s+Stop Conditions?\s*$/m),
         phaseModel: extractList(body, /^##\s+(Phase Model|Phases)\s*$/m),
         inputVariables: extractList(body, /^##\s+Input Variables?\s*$/m),
-        outputFormat: extractScalar(body, [/^##\s+Output Format[ \t]*\n+([^\n#]+)/m, /\*\*Output Format\*\*:?\s*([^\n]+)/]),
-        modelTarget: extractScalar(body, [/^##\s+Model[ _-]?Target[ \t]*\n+([^\n#]+)/mi, /model[_-]?target:?\s*([^\n,]+)/i, /\*\*Model Target\*\*:?\s*([^\n]+)/]),
+        outputFormat: extractScalar(body, [
+            /^##\s+Output Format[ \t]*\n+([^\n#]+)/m,
+            /\*\*Output Format\*\*:?\s*([^\n]+)/,
+        ]),
+        modelTarget: extractScalar(body, [
+            /^##\s+Model[ _-]?Target[ \t]*\n+([^\n#]+)/im,
+            /model[_-]?target:?\s*([^\n,]+)/i,
+            /\*\*Model Target\*\*:?\s*([^\n]+)/,
+        ]),
     };
 }
 const BOM = "\uFEFF";

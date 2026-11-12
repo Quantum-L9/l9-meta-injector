@@ -1,5 +1,5 @@
-import { type ArchitectureDocumentRole } from "./corpus_architecture_evidence";
 import type { ArchitectureEvidenceRecord } from "./corpus_architecture_evidence";
+import { type ArchitectureDocumentRole } from "./corpus_architecture_evidence";
 import type { CorpusVerification } from "./corpus_snapshot";
 /** Schema of the one response this module renders. */
 export declare const CORPUS_EVIDENCE_QUERY_SCHEMA = "l9.corpus-evidence-query/v1";

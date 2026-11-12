@@ -48,12 +48,12 @@ exports.resolveHeaderIdentity = resolveHeaderIdentity;
 exports.assertHeaderIdentity = assertHeaderIdentity;
 exports.verifySemanticFoundation = verifySemanticFoundation;
 exports.observeSemanticBinding = observeSemanticBinding;
+const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const crypto = __importStar(require("node:crypto"));
+const git_runtime_1 = require("./git_runtime");
 const operation_contracts_1 = require("./operation_contracts");
 const ordering_1 = require("./ordering");
-const git_runtime_1 = require("./git_runtime");
 exports.META_AUTHORITY_RELATIVE_PATH = ".l9/meta-authority.yaml";
 class AuthorityParseError extends Error {
     constructor(code, message) {
@@ -228,7 +228,8 @@ function assertIndent(line) {
 }
 /** Parse the intentionally small l9.meta-authority/v1 YAML grammar. */
 function parseAuthorityYaml(text) {
-    const lines = text.replace(/^\uFEFF/, "")
+    const lines = text
+        .replace(/^\uFEFF/, "")
         .split(/\r?\n/)
         .map(stripInlineComment)
         .filter((line) => line.trim().length > 0);
@@ -342,12 +343,15 @@ function parseAuthorityYaml(text) {
     if (!(0, operation_contracts_1.isSupportedAuthoritySchema)(result.schema)) {
         fail("META_AUTHORITY_SCHEMA_UNSUPPORTED", `unsupported authority schema '${String(result.schema ?? "<missing>")}'`);
     }
-    if (result.schema === operation_contracts_1.META_AUTHORITY_SCHEMA && ("semantic_foundation" in result || "product" in result)) {
+    if (result.schema === operation_contracts_1.META_AUTHORITY_SCHEMA &&
+        ("semantic_foundation" in result || "product" in result)) {
         fail("META_AUTHORITY_CONFIG_INVALID", "l9.meta-authority/v1 does not admit semantic_foundation or product");
     }
     if (!(0, operation_contracts_1.isAuthorityConfig)(result)) {
         const schema = String(result.schema ?? "<missing>");
-        fail(result.schema === operation_contracts_1.META_AUTHORITY_SCHEMA_V2 ? "META_SEMANTIC_BINDING_INVALID" : "META_AUTHORITY_CONFIG_INVALID", `authority document does not satisfy ${schema}`);
+        fail(result.schema === operation_contracts_1.META_AUTHORITY_SCHEMA_V2
+            ? "META_SEMANTIC_BINDING_INVALID"
+            : "META_AUTHORITY_CONFIG_INVALID", `authority document does not satisfy ${schema}`);
     }
     return result;
 }
@@ -445,7 +449,9 @@ function authorityPathConflict(repositoryRoot, authorityPath, relative) {
             return conflict("META_AUTHORITY_CONFIG_INVALID", `unable to inspect authority path component ${component}: ${error instanceof Error ? error.message : String(error)}`, authorityPath);
         }
         if (stat.isSymbolicLink()) {
-            return conflict("META_AUTHORITY_CONFIG_INVALID", leaf ? "authority file must not be a symbolic link" : `authority path component must not be a symbolic link: ${component}`, authorityPath);
+            return conflict("META_AUTHORITY_CONFIG_INVALID", leaf
+                ? "authority file must not be a symbolic link"
+                : `authority path component must not be a symbolic link: ${component}`, authorityPath);
         }
         if (!leaf && !stat.isDirectory()) {
             return conflict("META_AUTHORITY_CONFIG_INVALID", `authority path component is not a directory: ${component}`, authorityPath);
@@ -472,7 +478,9 @@ function loadRepositoryAuthority(root, options = {}) {
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
         return {
             path: authorityPath,
-            conflicts: [conflict("META_AUTHORITY_CONFIG_INVALID", "authority path escapes repository root", authorityPath)],
+            conflicts: [
+                conflict("META_AUTHORITY_CONFIG_INVALID", "authority path escapes repository root", authorityPath),
+            ],
         };
     }
     const pathConflict = authorityPathConflict(repositoryRoot, authorityPath, relative);
@@ -496,7 +504,9 @@ function loadRepositoryAuthority(root, options = {}) {
             return {
                 path: authorityPath,
                 authority,
-                conflicts: [conflict("META_AUTHORITY_WRITER_MISMATCH", "configured metadata writer does not match policy", authorityPath, mismatches)],
+                conflicts: [
+                    conflict("META_AUTHORITY_WRITER_MISMATCH", "configured metadata writer does not match policy", authorityPath, mismatches),
+                ],
                 digest,
             };
         }
@@ -504,7 +514,11 @@ function loadRepositoryAuthority(root, options = {}) {
     }
     catch (error) {
         if (error instanceof AuthorityParseError) {
-            return { path: authorityPath, conflicts: [conflict(error.code, error.message, authorityPath)], ...(digest ? { digest } : {}) };
+            return {
+                path: authorityPath,
+                conflicts: [conflict(error.code, error.message, authorityPath)],
+                ...(digest ? { digest } : {}),
+            };
         }
         return {
             path: authorityPath,
@@ -530,9 +544,9 @@ function resolveHeaderIdentity(root, request = {}) {
         };
     }
     const authority = loaded.authority;
-    const bound = authority?.schema === operation_contracts_1.META_AUTHORITY_SCHEMA_V2
-        && authority.product
-        && authority.semantic_foundation;
+    const bound = authority?.schema === operation_contracts_1.META_AUTHORITY_SCHEMA_V2 &&
+        authority.product &&
+        authority.semantic_foundation;
     if (bound && authority.product) {
         const conflicts = [];
         if (operatorAuthority && operatorAuthority !== authority.product.owner) {
@@ -568,7 +582,9 @@ function resolveHeaderIdentity(root, request = {}) {
             authority: "",
             namespace: operatorNamespace ?? folderNamespace,
             source: operatorNamespace ? "operator" : "folder",
-            conflicts: [conflict("META_AUTHORITY_FILE_MISSING", "header authority is required when no l9.meta-authority/v2 product binding is present", loaded.path)],
+            conflicts: [
+                conflict("META_AUTHORITY_FILE_MISSING", "header authority is required when no l9.meta-authority/v2 product binding is present", loaded.path),
+            ],
         };
     }
     return {
@@ -591,7 +607,9 @@ function verifySemanticFoundation(binding, semanticsRoot) {
     const conflicts = [];
     const semanticsDir = path.join(root, "semantics");
     if (!fs.existsSync(semanticsDir) || !fs.statSync(semanticsDir).isDirectory()) {
-        return [conflict("META_SEMANTIC_BINDING_INVALID", `semantics directory missing under ${root}`, semanticsDir)];
+        return [
+            conflict("META_SEMANTIC_BINDING_INVALID", `semantics directory missing under ${root}`, semanticsDir),
+        ];
     }
     // Every claimant is kept: a cited id claimed by more than one file does not identify
     // one ledger, so it is refused rather than resolved by file order (RC-036).
@@ -678,12 +696,23 @@ function observeSemanticBinding(root, options = {}) {
             ...base,
             status: "invalid",
             verification: { status: "not_run" },
-            conflicts: blocking.map((item) => ({ code: item.code, message: item.message.split(path.resolve(root)).join(".") })),
+            conflicts: blocking.map((item) => ({
+                code: item.code,
+                message: item.message.split(path.resolve(root)).join("."),
+            })),
         };
     }
     const authority = loaded.authority;
-    if (authority.schema !== operation_contracts_1.META_AUTHORITY_SCHEMA_V2 || !authority.semantic_foundation || !authority.product) {
-        return { ...base, status: "v1", authoritySchema: authority.schema, verification: { status: "not_run" }, conflicts: [] };
+    if (authority.schema !== operation_contracts_1.META_AUTHORITY_SCHEMA_V2 ||
+        !authority.semantic_foundation ||
+        !authority.product) {
+        return {
+            ...base,
+            status: "v1",
+            authoritySchema: authority.schema,
+            verification: { status: "not_run" },
+            conflicts: [],
+        };
     }
     const binding = authority.semantic_foundation;
     const observation = {
@@ -745,7 +774,10 @@ function observeSemanticBinding(root, options = {}) {
         });
     }
     for (const item of verifySemanticFoundation(binding, semanticsRoot)) {
-        conflicts.push({ code: item.code, message: item.message.split(semanticsRoot).join("<semantics-root>") });
+        conflicts.push({
+            code: item.code,
+            message: item.message.split(semanticsRoot).join("<semantics-root>"),
+        });
     }
     // Verified means every check in scope passed, including the identity checks made
     // before the checkout was opened. Any conflict at all is a failed verification.

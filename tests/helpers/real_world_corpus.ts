@@ -96,9 +96,20 @@ const PLAN_BODY = [
 ].join("\n");
 
 const PLAN_MD = [
-  "---", "title: Storage Migration Plan", "kind: plan", "status: WIP", "---", "",
-  "# Storage Migration Plan", "", "Depends on: services/ingest/README.md", "",
-  PLAN_BODY, "", "## Tasks", "",
+  "---",
+  "title: Storage Migration Plan",
+  "kind: plan",
+  "status: WIP",
+  "---",
+  "",
+  "# Storage Migration Plan",
+  "",
+  "Depends on: services/ingest/README.md",
+  "",
+  PLAN_BODY,
+  "",
+  "## Tasks",
+  "",
   "- [ ] move the staging directory out of the observed root",
   "- [ ] key the normalized-document layer on the decoder version",
   "- [x] hash every byte on acquisition rather than trusting mtime",
@@ -115,9 +126,20 @@ const PLAN_MD = [
  * that scores about 0.78 and is correctly *not* offered as a candidate.
  */
 const PLAN_V2_MD = [
-  "---", "title: Storage Migration Plan", "kind: plan", "status: WIP", "---", "",
-  "# Storage Migration Plan", "", "Depends on: services/ingest/README.md", "",
-  PLAN_BODY, "", "## Tasks", "",
+  "---",
+  "title: Storage Migration Plan",
+  "kind: plan",
+  "status: WIP",
+  "---",
+  "",
+  "# Storage Migration Plan",
+  "",
+  "Depends on: services/ingest/README.md",
+  "",
+  PLAN_BODY,
+  "",
+  "## Tasks",
+  "",
   "- [ ] move the staging directory out of the observed root",
   "- [x] key the normalized-document layer on the decoder version",
   "- [x] hash every byte on acquisition rather than trusting mtime",
@@ -127,9 +149,20 @@ const PLAN_V2_MD = [
 
 /** The same plan after a revision: same subject, different bytes. */
 const REVISED_PLAN_MD = [
-  "---", "title: Storage Migration Plan (revised)", "kind: plan", "status: WIP", "---", "",
-  "# Storage Migration Plan (revised)", "", "Supersedes: plan.md", "",
-  PLAN_BODY, "", "## Tasks", "",
+  "---",
+  "title: Storage Migration Plan (revised)",
+  "kind: plan",
+  "status: WIP",
+  "---",
+  "",
+  "# Storage Migration Plan (revised)",
+  "",
+  "Supersedes: plan.md",
+  "",
+  PLAN_BODY,
+  "",
+  "## Tasks",
+  "",
   "- [ ] move the staging directory out of the observed root",
   "- [x] key the normalized-document layer on the decoder version",
   "- [x] hash every byte on acquisition rather than trusting mtime",
@@ -138,8 +171,15 @@ const REVISED_PLAN_MD = [
 ].join("\n");
 
 const ROADMAP_MD = [
-  "---", "title: Ingest Roadmap", "kind: roadmap", "---", "", "# Ingest Roadmap", "",
-  "## Milestones", "",
+  "---",
+  "title: Ingest Roadmap",
+  "kind: roadmap",
+  "---",
+  "",
+  "# Ingest Roadmap",
+  "",
+  "## Milestones",
+  "",
   "- M1 content-addressed cache behind every deterministic layer",
   "- M2 resumable scans over a multi-terabyte corpus",
   "- M3 coverage reporting that names what the decoders cannot open",
@@ -147,8 +187,14 @@ const ROADMAP_MD = [
 ].join("\n");
 
 const BLOCKED_MD = [
-  "---", "title: OCR Pipeline", "kind: spec", "status: blocked", "---", "",
-  "# OCR Pipeline", "",
+  "---",
+  "title: OCR Pipeline",
+  "kind: spec",
+  "status: blocked",
+  "---",
+  "",
+  "# OCR Pipeline",
+  "",
   "Blocked by: no decoder budget approved for raster documents",
   "",
   "Scanned pages are the largest single unreadable class on both drives. Until a decoder",
@@ -166,8 +212,14 @@ const NOTES_TXT = [
 ].join("\n");
 
 const SETTINGS_INI = [
-  "[ingest]", "workers = 4", "scratch = /var/tmp/ingest", "",
-  "[cache]", "root = ~/.l9/corpus-cache", "enabled = true", "",
+  "[ingest]",
+  "workers = 4",
+  "scratch = /var/tmp/ingest",
+  "",
+  "[cache]",
+  "root = ~/.l9/corpus-cache",
+  "enabled = true",
+  "",
 ].join("\n");
 
 const MEASUREMENTS_CSV = [
@@ -179,10 +231,13 @@ const MEASUREMENTS_CSV = [
 ].join("\n");
 
 const REPORT_HTML = [
-  "<!doctype html>", "<html><head><title>Ingest report</title></head>", "<body>",
+  "<!doctype html>",
+  "<html><head><title>Ingest report</title></head>",
+  "<body>",
   "<h1>Ingest report</h1>",
   "<p>The second run read almost everything it needed out of the cache.</p>",
-  "</body></html>", "",
+  "</body></html>",
+  "",
 ].join("\n");
 
 const SCHEMA_SQL = [
@@ -198,9 +253,16 @@ const SCHEMA_SQL = [
 
 const OPENAPI_YAML = [
   "openapi: 3.0.3",
-  "info:", "  title: Ingest API", "  version: 1.4.0",
-  "paths:", "  /artifacts:", "    get:", "      summary: list observed artifacts",
-  "      responses:", "        '200':", "          description: ok",
+  "info:",
+  "  title: Ingest API",
+  "  version: 1.4.0",
+  "paths:",
+  "  /artifacts:",
+  "    get:",
+  "      summary: list observed artifacts",
+  "      responses:",
+  "        '200':",
+  "          description: ok",
   "",
 ].join("\n");
 
@@ -223,7 +285,11 @@ const TERRAFORM = [
 
 const GITLAB_CI = [
   "stages: [test]",
-  "unit:", "  stage: test", "  script:", "    - npm ci", "    - npm test",
+  "unit:",
+  "  stage: test",
+  "  script:",
+  "    - npm ci",
+  "    - npm test",
   "",
 ].join("\n");
 
@@ -243,15 +309,16 @@ const SECRETS_YAML = [
   "",
 ].join("\n");
 
-const CREDENTIALS_JSON = JSON.stringify(
-  {
-    aws_access_key_id: "AKIAIOSFODNN7EXAMPLE",
-    aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    region: "eu-central-1",
-  },
-  null,
-  2,
-) + "\n";
+const CREDENTIALS_JSON =
+  JSON.stringify(
+    {
+      aws_access_key_id: "AKIAIOSFODNN7EXAMPLE",
+      aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      region: "eu-central-1",
+    },
+    null,
+    2,
+  ) + "\n";
 
 const GO_MAKEFILE = ["build:", "\tgo build ./...", ""].join("\n");
 
@@ -301,15 +368,18 @@ function writeBinaryDocuments(driveRoot: string, backupRoot: string): void {
     headings: ["Scope", "Invalidation"],
     paragraphs: [
       "The ingest service reads the corpus and writes a normalized index.",
-      "The cache is keyed by the hash of the bytes and by the identity of the rules"
-      + " applied to those bytes, so a decoder version bump invalidates every"
-      + " normalized document it produced and nothing else.",
+      "The cache is keyed by the hash of the bytes and by the identity of the rules" +
+        " applied to those bytes, so a decoder version bump invalidates every" +
+        " normalized document it produced and nothing else.",
     ],
     listItems: [
       "hash every byte on acquisition rather than trusting mtime",
       "key the normalized-document layer on the decoder version",
     ],
-    table: [["milestone", "owner"], ["M1 content-addressed cache", "ingest"]],
+    table: [
+      ["milestone", "owner"],
+      ["M1 content-addressed cache", "ingest"],
+    ],
     externalLink: "https://example.invalid/ingest-contract",
   });
 
@@ -363,7 +433,11 @@ function writeBinaryDocuments(driveRoot: string, backupRoot: string): void {
   writeXlsx(path.join(backupRoot, "projects", "hasher", "benchmarks.xlsx"), [
     {
       name: "throughput",
-      rows: [["case", "mb_per_second"], ["stream", "412"], ["mmap", "508"]],
+      rows: [
+        ["case", "mb_per_second"],
+        ["stream", "412"],
+        ["mmap", "508"],
+      ],
     },
   ]);
 }
@@ -386,32 +460,50 @@ function driveFiles(): Entry[] {
     ["specs/schema.sql", SCHEMA_SQL],
 
     // A Node project: manifest, source, tests, CI, container, deployment.
-    ["services/ingest/package.json",
-      JSON.stringify({ name: "ingest", version: "1.4.0", scripts: { test: "vitest run" } }, null, 2) + "\n"],
+    [
+      "services/ingest/package.json",
+      JSON.stringify(
+        { name: "ingest", version: "1.4.0", scripts: { test: "vitest run" } },
+        null,
+        2,
+      ) + "\n",
+    ],
     ["services/ingest/README.md", "# Ingest\n\nReads a disk without writing to it.\n"],
-    ["services/ingest/server.js",
-      "'use strict';\nmodule.exports = function serve() { return 'ok'; };\n"],
-    ["services/ingest/lib/hash.js",
-      "'use strict';\nexports.sha256 = (b) => require('node:crypto').createHash('sha256').update(b).digest('hex');\n"],
-    ["services/ingest/tests/hash.test.js",
-      "const { sha256 } = require('../lib/hash');\ntest('hashes', () => { expect(sha256('')).toHaveLength(64); });\n"],
+    [
+      "services/ingest/server.js",
+      "'use strict';\nmodule.exports = function serve() { return 'ok'; };\n",
+    ],
+    [
+      "services/ingest/lib/hash.js",
+      "'use strict';\nexports.sha256 = (b) => require('node:crypto').createHash('sha256').update(b).digest('hex');\n",
+    ],
+    [
+      "services/ingest/tests/hash.test.js",
+      "const { sha256 } = require('../lib/hash');\ntest('hashes', () => { expect(sha256('')).toHaveLength(64); });\n",
+    ],
     ["services/ingest/Dockerfile", DOCKERFILE],
     ["services/ingest/.gitlab-ci.yml", GITLAB_CI],
     ["services/ingest/deploy/main.tf", TERRAFORM],
 
     // A Python project: manifest, source, test tree, no CI.
-    ["tools/dedupe/pyproject.toml",
-      '[project]\nname = "dedupe"\nversion = "0.3.0"\ndependencies = ["click"]\n'],
+    [
+      "tools/dedupe/pyproject.toml",
+      '[project]\nname = "dedupe"\nversion = "0.3.0"\ndependencies = ["click"]\n',
+    ],
     ["tools/dedupe/dedupe/__init__.py", '"""Cluster artifacts by content hash."""\n'],
-    ["tools/dedupe/dedupe/cluster.py",
-      "def cluster(hashes):\n"
-      + "    groups = {}\n"
-      + "    for key, value in hashes.items():\n"
-      + "        groups.setdefault(value, []).append(key)\n"
-      + "    return {k: v for k, v in groups.items() if len(v) > 1}\n"],
-    ["tools/dedupe/tests/test_cluster.py",
-      "from dedupe.cluster import cluster\n\n\ndef test_pairs():\n"
-      + "    assert cluster({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}\n"],
+    [
+      "tools/dedupe/dedupe/cluster.py",
+      "def cluster(hashes):\n" +
+        "    groups = {}\n" +
+        "    for key, value in hashes.items():\n" +
+        "        groups.setdefault(value, []).append(key)\n" +
+        "    return {k: v for k, v in groups.items() if len(v) > 1}\n",
+    ],
+    [
+      "tools/dedupe/tests/test_cluster.py",
+      "from dedupe.cluster import cluster\n\n\ndef test_pairs():\n" +
+        "    assert cluster({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}\n",
+    ],
     ["tools/dedupe/TODO.md", "# TODO\n\n- [ ] stream large files\n- [x] cluster by hash\n"],
 
     // Things the decoders genuinely cannot open: pre-2007 OLE compound
@@ -449,17 +541,21 @@ function backupFiles(): Entry[] {
     ["archive/plan.md", PLAN_MD],
     ["archive/notes.txt", NOTES_TXT],
 
-    ["archive/old-roadmap.md",
-      "---\ntitle: Ingest Roadmap\nkind: roadmap\n---\n\n# Ingest Roadmap\n\n"
-      + "## Milestones\n\n- M1 content-addressed cache\n"],
+    [
+      "archive/old-roadmap.md",
+      "---\ntitle: Ingest Roadmap\nkind: roadmap\n---\n\n# Ingest Roadmap\n\n" +
+        "## Milestones\n\n- M1 content-addressed cache\n",
+    ],
     ["archive/handover.txt", HANDOVER_TXT],
 
     // A Go project and a Rust one, so the manifest vocabulary is exercised
     // beyond the Node and Python cases on the other root.
     ["projects/router/go.mod", "module example.com/router\n\ngo 1.21\n"],
-    ["projects/router/main.go", "package main\n\nfunc main() { println(\"route\") }\n"],
-    ["projects/router/main_test.go",
-      "package main\n\nimport \"testing\"\n\nfunc TestNothing(t *testing.T) {}\n"],
+    ["projects/router/main.go", 'package main\n\nfunc main() { println("route") }\n'],
+    [
+      "projects/router/main_test.go",
+      'package main\n\nimport "testing"\n\nfunc TestNothing(t *testing.T) {}\n',
+    ],
     ["projects/router/Makefile", GO_MAKEFILE],
 
     ["projects/hasher/Cargo.toml", '[package]\nname = "hasher"\nversion = "0.1.0"\n'],
@@ -485,8 +581,9 @@ function writeArchives(
   writeRawZip(innerPath, [
     {
       name: "draft-spec.md",
-      content: "---\ntitle: Draft Spec\nkind: spec\nstatus: WIP\n---\n\n# Draft Spec\n\n"
-        + "TODO: decide the member locator syntax\n",
+      content:
+        "---\ntitle: Draft Spec\nkind: spec\nstatus: WIP\n---\n\n# Draft Spec\n\n" +
+        "TODO: decide the member locator syntax\n",
       stored: true,
     },
     { name: "scratch.txt", content: "two archives deep\n", stored: true },
@@ -500,7 +597,11 @@ function writeArchives(
   ]);
 
   writeRawZip(path.join(driveRoot, "archives", "release-notes.zip"), [
-    { name: "CHANGELOG.md", content: "# Changelog\n\n## 1.4.0\n\n- content-addressed cache\n", stored: true },
+    {
+      name: "CHANGELOG.md",
+      content: "# Changelog\n\n## 1.4.0\n\n- content-addressed cache\n",
+      stored: true,
+    },
     {
       name: "package.json",
       content: JSON.stringify({ name: "release-notes", version: "1.4.0" }, null, 2) + "\n",
@@ -526,9 +627,10 @@ function writeArchives(
     { name: "plan.md", content: PLAN_MD, stored: true },
     {
       name: "meeting-notes.md",
-      content: "---\ntitle: Ingest Kickoff\nkind: note\n---\n\n# Ingest Kickoff\n\n"
-        + "The ingest pipeline reads the corpus and writes a normalized index.\n"
-        + "Depends on: alpha-service\n",
+      content:
+        "---\ntitle: Ingest Kickoff\nkind: note\n---\n\n# Ingest Kickoff\n\n" +
+        "The ingest pipeline reads the corpus and writes a normalized index.\n" +
+        "Depends on: alpha-service\n",
       stored: true,
     },
   ]);
@@ -537,10 +639,14 @@ function writeArchives(
   // same way a loose file does. Staged and read back rather than synthesized,
   // because the member must be the same bytes a PDF reader would accept.
   const memberPdf = path.join(scratch, "receipt.pdf");
-  writePdf(memberPdf, [
-    "Ingest Kickoff receipt",
-    "The ingest pipeline reads the corpus and writes a normalized index.",
-  ], { title: "Ingest Kickoff receipt" });
+  writePdf(
+    memberPdf,
+    [
+      "Ingest Kickoff receipt",
+      "The ingest pipeline reads the corpus and writes a normalized index.",
+    ],
+    { title: "Ingest Kickoff receipt" },
+  );
 
   writeRawZip(path.join(zipRoot, "misc-2017.zip"), [
     { name: "handover.txt", content: HANDOVER_TXT, stored: true },

@@ -1,6 +1,6 @@
-import { InventoryResult } from "./inventory";
-import { InterpretationResult } from "./interpretation";
 import { type SemanticBindingObservation } from "./authority";
+import { InterpretationResult } from "./interpretation";
+import { InventoryResult } from "./inventory";
 /** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";

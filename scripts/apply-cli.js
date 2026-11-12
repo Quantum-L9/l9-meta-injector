@@ -9,7 +9,8 @@ const { renderApply, renderThrow } = require("./lib/operation-report");
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "apply-cli");
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "apply-cli");
-const usage = "usage: node scripts/apply-cli.js <root> [--glob PATTERN] [--out DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--near-dup 0..1] [--hash-prefix-length N] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
+const usage =
+  "usage: node scripts/apply-cli.js <root> [--glob PATTERN] [--out DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--near-dup 0..1] [--hash-prefix-length N] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("apply-cli", usage);
 const targetRoot = path.resolve(root);
 const outDir = path.resolve(opt("--out", `${targetRoot}.l9out`));
@@ -30,8 +31,12 @@ const identity = resolveCliHeaderIdentity(pkg, targetRoot, "apply-cli", {
 let metaSchema;
 const schemaPath = opt("--schema", null);
 if (schemaPath) {
-  try { metaSchema = inventoryPkg.loadMetaSchema(path.resolve(schemaPath)); }
-  catch (error) { console.error(`apply-cli: bad --schema (${error.message})`); process.exit(2); }
+  try {
+    metaSchema = inventoryPkg.loadMetaSchema(path.resolve(schemaPath));
+  } catch (error) {
+    console.error(`apply-cli: bad --schema (${error.message})`);
+    process.exit(2);
+  }
 }
 const llmEnabled = flag("--llm");
 const config = {
@@ -63,16 +68,23 @@ if (llmEnabled && !(config.llmBaseUrl && config.llmApiKey && config.llmModel)) {
   process.exit(2);
 }
 console.error(`apply-cli: governed apply over ${targetRoot} ...`);
-pkg.runApplyAsync(config).then((operation) => {
-  const apply = operation.apply;
-  if (!apply) throw new Error("apply operation returned no ApplyResult");
-  console.log(`apply-cli: scanned=${apply.scanned} planned=${apply.planned} changed=${apply.changed} inlineChanged=${apply.inlineChanged.length} metadataIndexChanged=${apply.metadataIndexChanged} passed=${apply.passed}`);
-  console.log(`apply-cli: transaction=${apply.transaction.transactionId ?? "none"} plannedWrites=${apply.transaction.plannedWrites} committedWrites=${apply.transaction.committedWrites} recovered=${apply.transaction.recoveredTransactions.length} finalized=${apply.transaction.finalizedTransactions.length}`);
-  // A refused apply must name the conflict, its path, and its reason. Exiting 1 with only
-  // `passed=false` tells an operator nothing they can act on.
-  for (const line of renderApply("apply-cli", apply, operation.warnings)) console.error(line);
-  process.exit(apply.passed ? 0 : 1);
-}).catch((error) => {
-  for (const line of renderThrow("apply-cli", error)) console.error(line);
-  process.exit(2);
-});
+pkg
+  .runApplyAsync(config)
+  .then((operation) => {
+    const apply = operation.apply;
+    if (!apply) throw new Error("apply operation returned no ApplyResult");
+    console.log(
+      `apply-cli: scanned=${apply.scanned} planned=${apply.planned} changed=${apply.changed} inlineChanged=${apply.inlineChanged.length} metadataIndexChanged=${apply.metadataIndexChanged} passed=${apply.passed}`,
+    );
+    console.log(
+      `apply-cli: transaction=${apply.transaction.transactionId ?? "none"} plannedWrites=${apply.transaction.plannedWrites} committedWrites=${apply.transaction.committedWrites} recovered=${apply.transaction.recoveredTransactions.length} finalized=${apply.transaction.finalizedTransactions.length}`,
+    );
+    // A refused apply must name the conflict, its path, and its reason. Exiting 1 with only
+    // `passed=false` tells an operator nothing they can act on.
+    for (const line of renderApply("apply-cli", apply, operation.warnings)) console.error(line);
+    process.exit(apply.passed ? 0 : 1);
+  })
+  .catch((error) => {
+    for (const line of renderThrow("apply-cli", error)) console.error(line);
+    process.exit(2);
+  });

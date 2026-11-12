@@ -140,8 +140,9 @@ export function buildAnalysisManifest(input: ManifestInput): CorpusAnalysisManif
   }
 
   entries.sort(
-    (a, b) => compareCodePoints(a.candidate_kind, b.candidate_kind)
-      || compareCodePoints(a.candidate_id, b.candidate_id),
+    (a, b) =>
+      compareCodePoints(a.candidate_kind, b.candidate_kind) ||
+      compareCodePoints(a.candidate_id, b.candidate_id),
   );
 
   const counts = Object.fromEntries(
@@ -210,16 +211,22 @@ export function diffAnalysisManifests(
     // across them would report every candidate as changed, which is worse than
     // saying the comparison is not available.
     return absent(
-      `manifest versions differ (${previous.manifest_version} vs ${current.manifest_version}); `
-      + "payload hashes from different definitions are not comparable",
+      `manifest versions differ (${previous.manifest_version} vs ${current.manifest_version}); ` +
+        "payload hashes from different definitions are not comparable",
     );
   }
 
   const before = new Map(previous.entries.map((entry) => [entry.candidate_id, entry]));
   const after = new Map(current.entries.map((entry) => [entry.candidate_id, entry]));
 
-  const perKind = new Map<CandidateKind, { added: number; removed: number; changed: number; unchanged: number }>();
-  const bump = (kind: CandidateKind, field: "added" | "removed" | "changed" | "unchanged"): void => {
+  const perKind = new Map<
+    CandidateKind,
+    { added: number; removed: number; changed: number; unchanged: number }
+  >();
+  const bump = (
+    kind: CandidateKind,
+    field: "added" | "removed" | "changed" | "unchanged",
+  ): void => {
     const tally = perKind.get(kind) ?? { added: 0, removed: 0, changed: 0, unchanged: 0 };
     tally[field] += 1;
     perKind.set(kind, tally);

@@ -110,13 +110,13 @@ exports.QUERY_OUTCOMES = [
     "invalid",
 ];
 /** The evidence-age statement every response carries. A recorded verification is history. */
-exports.EVIDENCE_AGE_STATEMENT = "Every record describes the bytes the generation observed when it ran. The verification "
-    + "class is the one that run recorded; nothing here re-reads the source files, so a "
-    + "fully_verified snapshot is evidence of what the files held then, not proof they are "
-    + "unchanged now, and a cached_unchanged_assumption snapshot was never byte-verified.";
-exports.TRUNCATION_STATEMENT = "More records matched than the limit returns. The returned set is the first of the "
-    + "deterministic order; narrow the query (root, artifact, predicate, class, text) rather "
-    + "than paging.";
+exports.EVIDENCE_AGE_STATEMENT = "Every record describes the bytes the generation observed when it ran. The verification " +
+    "class is the one that run recorded; nothing here re-reads the source files, so a " +
+    "fully_verified snapshot is evidence of what the files held then, not proof they are " +
+    "unchanged now, and a cached_unchanged_assumption snapshot was never byte-verified.";
+exports.TRUNCATION_STATEMENT = "More records matched than the limit returns. The returned set is the first of the " +
+    "deterministic order; narrow the query (root, artifact, predicate, class, text) rather " +
+    "than paging.";
 // ───────────────────────────── the pinned generation ─────────────────────────────
 class QueryRefusal extends Error {
     constructor(code, message) {
@@ -140,9 +140,11 @@ class PinnedGeneration {
         // A pointer with no list, or a list entry without a path and a hash, cannot
         // vouch for anything and is refused as malformed rather than crashed on.
         const files = current.files;
-        if (!Array.isArray(files) || files.some((file) => file === null || typeof file !== "object"
-            || typeof file.path !== "string"
-            || typeof file.content_hash !== "string")) {
+        if (!Array.isArray(files) ||
+            files.some((file) => file === null ||
+                typeof file !== "object" ||
+                typeof file.path !== "string" ||
+                typeof file.content_hash !== "string")) {
             throw new QueryRefusal("query.pointer_malformed", "CURRENT.json does not carry a well-formed file list (each entry needs a path and a content_hash)");
         }
         this.hashes = new Map(current.files.map((file) => [file.path, file.content_hash]));
@@ -251,15 +253,17 @@ function loadGeneration(pinned) {
     const index = pinned.json("document-index.json", corpus_documents_1.DOCUMENT_INDEX_SCHEMA);
     const signals = pinned.json("document-signals.json", corpus_document_signals_1.CORPUS_DOCUMENT_SIGNALS_SCHEMA);
     const sameCorpus = (name, document) => {
-        if (document.corpus_source_snapshot_id !== snapshot.corpus_source_snapshot_id
-            || document.corpus_analysis_id !== snapshot.analysis.corpus_analysis_id) {
+        if (document.corpus_source_snapshot_id !== snapshot.corpus_source_snapshot_id ||
+            document.corpus_analysis_id !== snapshot.analysis.corpus_analysis_id) {
             throw new QueryRefusal("query.corpus_mismatch", `${name} names a different corpus than corpus-snapshot.json`);
         }
     };
     sameCorpus("document-index.json", index);
     sameCorpus("document-signals.json", signals);
     const knownArtifactIds = new Set(snapshot.artifacts.map((artifact) => artifact.virtual_source_id));
-    const knownNormalizedDocumentIds = new Set(index.documents.map((entry) => entry.normalized_document_id).filter((id) => id !== null));
+    const knownNormalizedDocumentIds = new Set(index.documents
+        .map((entry) => entry.normalized_document_id)
+        .filter((id) => id !== null));
     const sources = [];
     // Work signals: required in every generation this query reads.
     const workManifest = pinned.json(corpus_work_signal_export_1.DOCUMENT_WORK_SIGNALS_MANIFEST_FILE, corpus_work_signal_export_1.DOCUMENT_WORK_SIGNALS_MANIFEST_SCHEMA);
@@ -273,9 +277,10 @@ function loadGeneration(pinned) {
         reportSignalCount: signals.block_signals.signal_count,
     });
     const workRef = snapshot.document_work_signals;
-    if (workRef !== undefined && (workRef.payload_artifact_hash !== workManifest.payload_artifact_hash
-        || workRef.payload_semantic_hash !== workManifest.payload_semantic_hash
-        || workRef.record_count !== workManifest.record_count)) {
+    if (workRef !== undefined &&
+        (workRef.payload_artifact_hash !== workManifest.payload_artifact_hash ||
+            workRef.payload_semantic_hash !== workManifest.payload_semantic_hash ||
+            workRef.record_count !== workManifest.record_count)) {
         workProblems.push("the snapshot's document_work_signals reference does not match the manifest");
     }
     if (workProblems.length > 0) {
@@ -291,7 +296,8 @@ function loadGeneration(pinned) {
     });
     // Architecture evidence: opt-in, so absent is a state rather than a failure.
     let architecture = null;
-    if (snapshot.architecture_evidence !== undefined || pinned.names(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE)) {
+    if (snapshot.architecture_evidence !== undefined ||
+        pinned.names(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE)) {
         const manifest = pinned.json(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_MANIFEST_FILE, corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA);
         sameCorpus(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_MANIFEST_FILE, manifest);
         const payload = pinned.text(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE);
@@ -305,9 +311,9 @@ function loadGeneration(pinned) {
         if (ref === undefined) {
             problems.push("the payload is present but the snapshot does not reference it");
         }
-        else if (ref.payload_artifact_hash !== manifest.payload_artifact_hash
-            || ref.payload_semantic_hash !== manifest.payload_semantic_hash
-            || ref.record_count !== manifest.record_count) {
+        else if (ref.payload_artifact_hash !== manifest.payload_artifact_hash ||
+            ref.payload_semantic_hash !== manifest.payload_semantic_hash ||
+            ref.record_count !== manifest.record_count) {
             problems.push("the snapshot's architecture_evidence reference does not match the manifest");
         }
         if (problems.length > 0) {
@@ -356,7 +362,9 @@ function loadGeneration(pinned) {
         // promised, so it is the same proof the scan ran before emitting it.
         const validation = (0, repository_model_1.validateRepositoryModelPacket)(packet);
         if (validation.status !== "passed") {
-            const failed = validation.checks.filter((entry) => entry.status !== "passed").map((entry) => entry.rule);
+            const failed = validation.checks
+                .filter((entry) => entry.status !== "passed")
+                .map((entry) => entry.rule);
             throw new QueryRefusal("query.packet_invalid", `${relative} failed its own packet validation: ${failed.join(", ")}`);
         }
         if (packet.packet_id !== root.rmp_packet_id) {
@@ -368,7 +376,8 @@ function loadGeneration(pinned) {
         source: "repository_model_packet",
         schema: repository_model_1.REPOSITORY_MODEL_PACKET_TYPE,
         status: "verified",
-        record_count: packets.reduce((sum, entry) => sum + entry.packet.payload.assertions.filter((a) => a.subject_id.startsWith("artifact:")).length, 0),
+        record_count: packets.reduce((sum, entry) => sum +
+            entry.packet.payload.assertions.filter((a) => a.subject_id.startsWith("artifact:")).length, 0),
         problems: [],
     });
     sources.sort((a, b) => (0, ordering_1.compareCodePoints)(a.source, b.source));
@@ -512,7 +521,10 @@ function fromPacket(assertion, artifactId, context) {
         value: assertion.object,
         value_truncated_at_source: false,
         structured_locator: null,
-        source_range: { start_line: assertion.source_range.start_line, end_line: assertion.source_range.end_line },
+        source_range: {
+            start_line: assertion.source_range.start_line,
+            end_line: assertion.source_range.end_line,
+        },
         block_id: null,
         block_kind: null,
         decoder_id: context.entry.decoder_id,
@@ -562,9 +574,9 @@ const SOURCE_RANK = {
 };
 /** Total order over results: source, artifact, then the record's own id. */
 function compareResults(a, b) {
-    return (SOURCE_RANK[a.source] - SOURCE_RANK[b.source]
-        || (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id)
-        || (0, ordering_1.compareCodePoints)(a.record_id, b.record_id));
+    return (SOURCE_RANK[a.source] - SOURCE_RANK[b.source] ||
+        (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id) ||
+        (0, ordering_1.compareCodePoints)(a.record_id, b.record_id));
 }
 /** Cut an excerpt at a UTF-8 byte bound without splitting a character. */
 function cutExcerpt(excerpt, maxBytes) {
@@ -640,10 +652,12 @@ function queryCorpusEvidence(input) {
     try {
         query.limit = normalizeLimit(input.limit);
         query.max_excerpt_bytes = normalizeExcerptBytes(input.maxExcerptBytes);
-        if (query.statement_class !== null && !architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.includes(query.statement_class)) {
+        if (query.statement_class !== null &&
+            !architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.includes(query.statement_class)) {
             return refuse("unsupported", "query.unknown_statement_class", `'${query.statement_class}' is not a statement class; the vocabulary is ${architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.join(", ")}`);
         }
-        if (roleFilter !== null && !corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.includes(roleFilter)) {
+        if (roleFilter !== null &&
+            !corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.includes(roleFilter)) {
             return refuse("unsupported", "query.unknown_role", `'${roleFilter}' is not a selection role; the roles are ${corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.join(", ")}`);
         }
         if (query.source !== null && !exports.EVIDENCE_SOURCES.includes(query.source)) {
@@ -713,15 +727,17 @@ function queryCorpusEvidence(input) {
     if (query.artifact !== null) {
         artifactId = contexts.byArtifact.has(query.artifact)
             ? query.artifact
-            : contexts.byRmp.get(query.artifact) ?? contexts.byCorpusPath.get(query.artifact) ?? null;
+            : (contexts.byRmp.get(query.artifact) ?? contexts.byCorpusPath.get(query.artifact) ?? null);
         if (artifactId === null) {
             return refuse("unavailable", "query.unknown_artifact", `artifact '${query.artifact}' is not in the pinned generation`, generation, loaded.sources);
         }
-        if (rootIds !== null && !rootIds.has(contexts.byArtifact.get(artifactId)?.entry.root_id ?? "")) {
+        if (rootIds !== null &&
+            !rootIds.has(contexts.byArtifact.get(artifactId)?.entry.root_id ?? "")) {
             return refuse("unavailable", "query.artifact_outside_root", `artifact '${query.artifact}' does not belong to root '${query.root}'`, generation, loaded.sources);
         }
     }
-    const matches = allRecords(loaded, contexts).filter((record) => {
+    const matches = allRecords(loaded, contexts)
+        .filter((record) => {
         if (query.source !== null && record.source !== query.source)
             return false;
         if (rootIds !== null && !rootIds.has(record.root_id))
@@ -732,18 +748,24 @@ function queryCorpusEvidence(input) {
             return false;
         if (query.statement_class !== null && record.statement_class !== query.statement_class)
             return false;
-        if (roleFilter !== null && !record.selection?.roles?.includes(roleFilter))
+        if (roleFilter !== null &&
+            !record.selection?.roles?.includes(roleFilter))
             return false;
         if (selectedOnly && record.selection?.selected !== true)
             return false;
-        if (query.kind !== null && !record.document_declarations.kinds.some((ref) => ref.object === query.kind))
+        if (query.kind !== null &&
+            !record.document_declarations.kinds.some((ref) => ref.object === query.kind))
             return false;
-        if (query.status !== null && !record.document_declarations.statuses.some((ref) => ref.object === query.status))
+        if (query.status !== null &&
+            !record.document_declarations.statuses.some((ref) => ref.object === query.status))
             return false;
-        if (query.text !== null && !record.value.includes(query.text) && !record.bounded_excerpt.includes(query.text))
+        if (query.text !== null &&
+            !record.value.includes(query.text) &&
+            !record.bounded_excerpt.includes(query.text))
             return false;
         return true;
-    }).sort(compareResults);
+    })
+        .sort(compareResults);
     const returned = matches.slice(0, query.limit).map((record) => {
         const { excerpt, cut } = cutExcerpt(record.bounded_excerpt, query.max_excerpt_bytes);
         return cut ? { ...record, bounded_excerpt: excerpt, excerpt_cut_by_query: true } : record;

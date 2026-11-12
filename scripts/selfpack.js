@@ -34,20 +34,31 @@ const REQUIRED_INDEXES = [
   "verification-report.json",
 ];
 
-function fail(msg) { console.error(`selfpack: ${msg}`); process.exit(2); }
+function fail(msg) {
+  console.error(`selfpack: ${msg}`);
+  process.exit(2);
+}
 
 let pkg;
-try { pkg = require(path.join(REPO, "dist", "index.js")); }
-catch (e) { fail(`could not load dist/index.js (run "npm run build" first): ${e.message}`); }
+try {
+  pkg = require(path.join(REPO, "dist", "index.js"));
+} catch (e) {
+  fail(`could not load dist/index.js (run "npm run build" first): ${e.message}`);
+}
 
 function isGenerated(name) {
-  return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml") || name === "selfpack.baseline.json";
+  return (
+    name.endsWith(".inject.log") ||
+    name.endsWith(".l9meta.yaml") ||
+    name === "selfpack.baseline.json"
+  );
 }
 function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
     if (isGenerated(e.name)) continue; // never copy generated artifacts into the corpus
-    const s = path.join(src, e.name), d = path.join(dst, e.name);
+    const s = path.join(src, e.name),
+      d = path.join(dst, e.name);
     if (e.isDirectory()) copyDir(s, d);
     else fs.copyFileSync(s, d);
   }
@@ -55,36 +66,55 @@ function copyDir(src, dst) {
 function walk(dir, acc = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, acc); else acc.push(p);
+    if (e.isDirectory()) walk(p, acc);
+    else acc.push(p);
   }
   return acc;
 }
-function rel(root, p) { return path.relative(root, p).split(path.sep).join("/"); }
+function rel(root, p) {
+  return path.relative(root, p).split(path.sep).join("/");
+}
 
 function pipelineConfig(root, out) {
   return {
-    root, glob: "**/*", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
-function tmp(prefix) { return fs.mkdtempSync(path.join(os.tmpdir(), prefix)); }
+function tmp(prefix) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
 
 async function measureIdempotency() {
-  const root = tmp("selfpack-idem-"), out = tmp("selfpack-idemo-");
+  const root = tmp("selfpack-idem-"),
+    out = tmp("selfpack-idemo-");
   copyDir(FIXTURES, root);
   await pkg.runPipelineAsync(pipelineConfig(root, out));
   const before = new Map(walk(root).map((f) => [f, fs.readFileSync(f)]));
   await pkg.runPipelineAsync(pipelineConfig(root, out));
   const after = walk(root);
   let changed = 0;
-  for (const f of after) { const b = before.get(f); if (!b?.equals(fs.readFileSync(f))) changed++; }
+  for (const f of after) {
+    const b = before.get(f);
+    if (!b?.equals(fs.readFileSync(f))) changed++;
+  }
   return changed;
 }
 
 async function main() {
-  const root = tmp("selfpack-"), out = tmp("selfpack-out-");
+  const root = tmp("selfpack-"),
+    out = tmp("selfpack-out-");
   copyDir(FIXTURES, root);
   const result = await pkg.runPipelineAsync(pipelineConfig(root, out));
 
@@ -92,10 +122,14 @@ async function main() {
   for (const name of REQUIRED_INDEXES) {
     if (!fs.existsSync(path.join(out, name))) fail(`missing required index output: ${name}`);
   }
-  const primitive = JSON.parse(fs.readFileSync(path.join(out, "primitive-library-index.json"), "utf8"));
+  const primitive = JSON.parse(
+    fs.readFileSync(path.join(out, "primitive-library-index.json"), "utf8"),
+  );
   const prompt = JSON.parse(fs.readFileSync(path.join(out, "prompt-library-index.json"), "utf8"));
   const dedup = JSON.parse(fs.readFileSync(path.join(out, "dedup-report.json"), "utf8"));
-  const verification = JSON.parse(fs.readFileSync(path.join(out, "verification-report.json"), "utf8"));
+  const verification = JSON.parse(
+    fs.readFileSync(path.join(out, "verification-report.json"), "utf8"),
+  );
   if (!Array.isArray(primitive) || !Array.isArray(prompt) || !Array.isArray(verification)) {
     fail("index outputs are not arrays as expected");
   }
@@ -106,7 +140,8 @@ async function main() {
   const files = result.scanned
     .filter((e) => injByPath.has(e.sourcePath))
     .map((e) => {
-      const r = injByPath.get(e.sourcePath), v = verByPath.get(e.sourcePath);
+      const r = injByPath.get(e.sourcePath),
+        v = verByPath.get(e.sourcePath);
       return {
         path: rel(root, e.sourcePath),
         id: r.meta.id,
@@ -122,8 +157,13 @@ async function main() {
     })
     .sort((a, b) => a.path.localeCompare(b.path));
 
-  const dist = (arr, key) => arr.reduce((m, x) => { m[x[key]] = (m[x[key]] || 0) + 1; return m; }, {});
-  const sortObj = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => a[0].localeCompare(b[0])));
+  const dist = (arr, key) =>
+    arr.reduce((m, x) => {
+      m[x[key]] = (m[x[key]] || 0) + 1;
+      return m;
+    }, {});
+  const sortObj = (o) =>
+    Object.fromEntries(Object.entries(o).sort((a, b) => a[0].localeCompare(b[0])));
 
   const summary = {
     fixtures: rel(REPO, FIXTURES),
@@ -131,7 +171,14 @@ async function main() {
       scanned: result.scanned.length,
       injected: result.injected.length,
       verified: result.verified.length,
-      verifiedClean: result.verified.filter((v) => v.yamlValid && v.bodyPreserved && v.taxonomyValid && v.sharingScopeValid && v.issues.length === 0).length,
+      verifiedClean: result.verified.filter(
+        (v) =>
+          v.yamlValid &&
+          v.bodyPreserved &&
+          v.taxonomyValid &&
+          v.sharingScopeValid &&
+          v.issues.length === 0,
+      ).length,
     },
     strategyDist: sortObj(dist(files, "strategy")),
     typeDist: sortObj(dist(files, "artifact_type")),
@@ -142,7 +189,14 @@ async function main() {
       dedupUniqueCount: dedup.uniqueCount,
       dedupExactTwins: dedup.auditorTwins.length,
       verificationEntries: verification.length,
-      verificationClean: verification.filter((v) => v.yamlValid && v.bodyPreserved && v.taxonomyValid && v.sharingScopeValid && v.issues.length === 0).length,
+      verificationClean: verification.filter(
+        (v) =>
+          v.yamlValid &&
+          v.bodyPreserved &&
+          v.taxonomyValid &&
+          v.sharingScopeValid &&
+          v.issues.length === 0,
+      ).length,
     },
     idempotency: { rerunFilesChanged: await measureIdempotency() },
     files,
@@ -153,12 +207,16 @@ async function main() {
   const baselineExists = fs.existsSync(BASELINE);
   if (UPDATE) {
     fs.writeFileSync(BASELINE, rendered, "utf8");
-    console.log(`selfpack: baseline ${baselineExists ? "updated" : "created"} → ${rel(REPO, BASELINE)}`);
+    console.log(
+      `selfpack: baseline ${baselineExists ? "updated" : "created"} → ${rel(REPO, BASELINE)}`,
+    );
     printHighlights(summary);
     return;
   }
   if (!baselineExists) {
-    fail(`missing committed baseline ${rel(REPO, BASELINE)}; create it deliberately with: npm run selfpack:update`);
+    fail(
+      `missing committed baseline ${rel(REPO, BASELINE)}; create it deliberately with: npm run selfpack:update`,
+    );
   }
 
   const baseline = fs.readFileSync(BASELINE, "utf8");
@@ -170,19 +228,27 @@ async function main() {
 
   console.error(`selfpack: DRIFT — output differs from baseline (${rel(REPO, BASELINE)}).`);
   printLineDiff(baseline, rendered);
-  console.error('\nIf this change is intended/an improvement, re-baseline with:  npm run selfpack:update');
+  console.error(
+    "\nIf this change is intended/an improvement, re-baseline with:  npm run selfpack:update",
+  );
   process.exit(1);
 }
 
 function printHighlights(s) {
-  console.log(`  scanned=${s.totals.scanned} injected=${s.totals.injected} verifiedClean=${s.totals.verifiedClean}/${s.totals.verified}`);
+  console.log(
+    `  scanned=${s.totals.scanned} injected=${s.totals.injected} verifiedClean=${s.totals.verifiedClean}/${s.totals.verified}`,
+  );
   console.log(`  strategies=${JSON.stringify(s.strategyDist)}`);
   console.log(`  types=${JSON.stringify(s.typeDist)}`);
-  console.log(`  idempotency.rerunFilesChanged=${s.idempotency.rerunFilesChanged}` + (s.idempotency.rerunFilesChanged === 0 ? " (stable)" : " (NOT yet stable)"));
+  console.log(
+    `  idempotency.rerunFilesChanged=${s.idempotency.rerunFilesChanged}` +
+      (s.idempotency.rerunFilesChanged === 0 ? " (stable)" : " (NOT yet stable)"),
+  );
 }
 
 function printLineDiff(a, b) {
-  const la = a.split("\n"), lb = b.split("\n");
+  const la = a.split("\n"),
+    lb = b.split("\n");
   for (let i = 0; i < Math.max(la.length, lb.length); i++) {
     if (la[i] !== lb[i]) {
       if (la[i] !== undefined) console.error(`  - ${la[i]}`);

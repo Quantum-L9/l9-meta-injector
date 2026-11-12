@@ -17,7 +17,7 @@ import { assistField, DEFAULT_ASSIST_CONFIG } from "../src/assist";
 import { resetAdapter, setAdapter } from "../src/llm";
 import { MetricsCollector } from "../src/metrics";
 import { runPipelineAsync } from "../src/pipeline";
-import { UNKNOWN, type PipelineConfig } from "../src/schema";
+import { type PipelineConfig, UNKNOWN } from "../src/schema";
 import { runSkillsPipelineAsync } from "../src/skills_pipeline";
 
 const dirs: string[] = [];
@@ -70,13 +70,16 @@ describe("WU-015 assistField shapes list-typed fields", () => {
 async function fakeChatServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
     let raw = "";
-    req.on("data", (chunk) => { raw += String(chunk); });
+    req.on("data", (chunk) => {
+      raw += String(chunk);
+    });
     req.on("end", () => {
       const body = JSON.parse(raw) as { messages?: Array<{ content?: string }> };
       const prompt = (body.messages ?? []).map((m) => m.content ?? "").join("\n");
       let content = "";
       if (prompt.includes("trigger phrases")) content = "alpha phrase, beta phrase, gamma phrase";
-      else if (prompt.includes("describing what this artifact does")) content = "Summarises release notes into a short changelog digest for maintainers.";
+      else if (prompt.includes("describing what this artifact does"))
+        content = "Summarises release notes into a short changelog digest for maintainers.";
       else content = "no";
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ choices: [{ message: { content } }] }));
@@ -99,14 +102,30 @@ describe("WU-015 assisted pipeline writes are idempotent", () => {
       fs.writeFileSync(fp, "# Notes\n\nPlain notes.\n");
       const out = `${root}.out`;
       const config: PipelineConfig = {
-        root, glob: "**/*.md", dryRun: false, outDir: out, indexDir: out, namespace: "l9",
-        authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-        verbose: false, llmEnabled: true, normalizeFilenames: false,
-        llmBaseUrl: server.baseUrl, llmApiKey: "test-key", llmModel: "fake", llmAllowInsecure: true,
+        root,
+        glob: "**/*.md",
+        dryRun: false,
+        outDir: out,
+        indexDir: out,
+        namespace: "l9",
+        authority: "l9.doctrine.platform",
+        nearDupThreshold: 0.9,
+        hashPrefixLength: 16,
+        verbose: false,
+        llmEnabled: true,
+        normalizeFilenames: false,
+        llmBaseUrl: server.baseUrl,
+        llmApiKey: "test-key",
+        llmModel: "fake",
+        llmAllowInsecure: true,
       };
 
       const first = await runPipelineAsync(config);
-      expect(first.injected[0]?.meta.activation_signals).toEqual(["alpha phrase", "beta phrase", "gamma phrase"]);
+      expect(first.injected[0]?.meta.activation_signals).toEqual([
+        "alpha phrase",
+        "beta phrase",
+        "gamma phrase",
+      ]);
       const afterFirst = fs.readFileSync(fp, "utf8");
 
       await runPipelineAsync(config);
@@ -122,7 +141,10 @@ describe("WU-015 skills mode is unchanged", () => {
     const root = tmpDir();
     const dir = path.join(root, "skills", "reviewer");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "SKILL.md"), "---\nname: reviewer\ndescription: Reviews stuff\n---\n\n# reviewer\n\nCheck things carefully.\n");
+    fs.writeFileSync(
+      path.join(dir, "SKILL.md"),
+      "---\nname: reviewer\ndescription: Reviews stuff\n---\n\n# reviewer\n\nCheck things carefully.\n",
+    );
     setAdapter({
       estimateTokens: (t) => Math.ceil(t.length / 4),
       classify: async (prompt: string) => {
@@ -135,7 +157,12 @@ describe("WU-015 skills mode is unchanged", () => {
       },
     });
     const result = await runSkillsPipelineAsync({
-      root, authority: "l9.auto", dryRun: true, outDir: `${root}.out`, verbose: false, llmEnabled: true,
+      root,
+      authority: "l9.auto",
+      dryRun: true,
+      outDir: `${root}.out`,
+      verbose: false,
+      llmEnabled: true,
     });
     const signals = result.files[0]?.diffs.find((d) => d.field === "activation_signals");
     expect(signals?.newValue).toEqual(["code review", "pull request", "PR review"]);

@@ -8,15 +8,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { corpusRootId } from "../src/corpus_roots";
 import {
+  boundedMap,
   CORPUS_SESSION_SCHEMA,
   CorpusSessionStore,
+  corpusSessionId,
   DEFAULT_CORPUS_BUDGETS,
   MemoryBudget,
-  boundedMap,
-  corpusSessionId,
 } from "../src/corpus_session";
-import { corpusRootId } from "../src/corpus_roots";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-session-"): string {
@@ -48,7 +48,12 @@ describe("session identity", () => {
 describe("a session manifest", () => {
   it("records completions by content-addressed key and sorts them", () => {
     const file = path.join(tmp(), "corpus-session.json");
-    const store = CorpusSessionStore.open({ file, roots: roots("A"), budgets, now: "2026-01-01T00:00:00Z" });
+    const store = CorpusSessionStore.open({
+      file,
+      roots: roots("A"),
+      budgets,
+      now: "2026-01-01T00:00:00Z",
+    });
     store.setTarget("corpus-snapshot:target");
     store.completeSource("vsrc:b");
     store.completeSource("vsrc:a");
@@ -56,7 +61,12 @@ describe("a session manifest", () => {
     store.completeArchive("sha256:zip");
     store.completeDecoder("normdoc:1");
     store.completeAnalysis("candidate:1");
-    store.fail({ code: "corpus.read_failed", severity: "warning", message: "unreadable", corpus_path: "A::x" });
+    store.fail({
+      code: "corpus.read_failed",
+      severity: "warning",
+      message: "unreadable",
+      corpus_path: "A::x",
+    });
     store.save("2026-01-01T00:00:01Z");
 
     const written = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -67,7 +77,9 @@ describe("a session manifest", () => {
     expect(written.completed_decoder_keys).toEqual(["normdoc:1"]);
     expect(written.completed_analysis_keys).toEqual(["candidate:1"]);
     expect(written.failure_diagnostics).toHaveLength(1);
-    expect(written.budgets.max_parallel_decoders).toBe(DEFAULT_CORPUS_BUDGETS.max_parallel_decoders);
+    expect(written.budgets.max_parallel_decoders).toBe(
+      DEFAULT_CORPUS_BUDGETS.max_parallel_decoders,
+    );
     expect(fs.readdirSync(path.dirname(file)).filter((n) => n.endsWith(".tmp"))).toEqual([]);
   });
 
@@ -77,18 +89,36 @@ describe("a session manifest", () => {
     first.completeDecoder("normdoc:1");
     first.save("t1");
 
-    const same = CorpusSessionStore.open({ file, roots: roots("B", "A"), budgets, now: "t2", resume: true });
+    const same = CorpusSessionStore.open({
+      file,
+      roots: roots("B", "A"),
+      budgets,
+      now: "t2",
+      resume: true,
+    });
     expect(same.hasDecoderKey("normdoc:1")).toBe(true);
     expect(same.resumedCounts.decoder_keys).toBe(1);
 
-    const other = CorpusSessionStore.open({ file, roots: roots("C"), budgets, now: "t3", resume: true });
+    const other = CorpusSessionStore.open({
+      file,
+      roots: roots("C"),
+      budgets,
+      now: "t3",
+      resume: true,
+    });
     expect(other.hasDecoderKey("normdoc:1")).toBe(false);
   });
 
   it("starts fresh rather than trusting an unreadable manifest", () => {
     const file = path.join(tmp(), "corpus-session.json");
     fs.writeFileSync(file, "{ truncated", "utf8");
-    const store = CorpusSessionStore.open({ file, roots: roots("A"), budgets, now: "t0", resume: true });
+    const store = CorpusSessionStore.open({
+      file,
+      roots: roots("A"),
+      budgets,
+      now: "t0",
+      resume: true,
+    });
     expect(store.resumedCounts.source_ids).toBe(0);
   });
 

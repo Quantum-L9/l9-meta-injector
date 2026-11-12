@@ -66,13 +66,18 @@ function scriptCandidates(importer: string, target: string, specifier: string): 
   }
   if (importer.endsWith(".mjs")) return [target];
   if (extension !== "") return [target];
-  return [target, ...NODE_EXTENSIONLESS.map((ext) => target + ext), ...NODE_INDEX.map((ext) => target + ext)];
+  return [
+    target,
+    ...NODE_EXTENSIONLESS.map((ext) => target + ext),
+    ...NODE_INDEX.map((ext) => target + ext),
+  ];
 }
 
 /** A relative target inside the root, or null when it escapes it. */
 function joinInside(importer: string, relative: string): string | null {
   const joined = posix.normalize(posix.join(posix.dirname(importer), relative)).replace(/\/+$/, "");
-  if (joined === "." || joined === ".." || joined.startsWith("../") || joined.startsWith("/")) return null;
+  if (joined === "." || joined === ".." || joined.startsWith("../") || joined.startsWith("/"))
+    return null;
   return joined;
 }
 
@@ -83,16 +88,25 @@ function classifyScript(
   excerpt: string,
   input: ExtractorFileInput,
 ): AssertionDraft {
-  if (specifier.startsWith("./") || specifier.startsWith("../") || specifier === "." || specifier === "..") {
+  if (
+    specifier.startsWith("./") ||
+    specifier.startsWith("../") ||
+    specifier === "." ||
+    specifier === ".."
+  ) {
     const target = joinInside(importer, specifier);
-    const found = target === null
-      ? undefined
-      : scriptCandidates(importer, target, specifier).find((candidate) => input.pathExists(candidate));
+    const found =
+      target === null
+        ? undefined
+        : scriptCandidates(importer, target, specifier).find((candidate) =>
+            input.pathExists(candidate),
+          );
     return found !== undefined
       ? observed("source.import.local", found, range, excerpt)
       : observed("source.import.local_unresolved", specifier, range, excerpt);
   }
-  if (specifier.startsWith("node:")) return observed("source.import.builtin", specifier, range, excerpt);
+  if (specifier.startsWith("node:"))
+    return observed("source.import.builtin", specifier, range, excerpt);
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(specifier) || specifier.startsWith("data:")) {
     return observed("source.import.url", specifier, range, excerpt);
   }
@@ -119,7 +133,20 @@ interface Token {
 
 /** Keywords after which a `/` begins a regular expression rather than a division. */
 const REGEX_AFTER_WORD = new Set([
-  "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await",
+  "return",
+  "typeof",
+  "instanceof",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "case",
+  "do",
+  "else",
+  "yield",
+  "await",
 ]);
 
 /**
@@ -157,9 +184,11 @@ function scanScript(content: string): Token[] | null {
     if (previous.kind === "punct" && (previous.value === "+" || previous.value === "-")) {
       const sign = tokens[tokens.length - 2];
       if (
-        sign?.kind === "punct" && sign.value === previous.value
-        && sign.offset !== undefined && previous.offset === sign.offset + 1
-        && endsExpression(tokens[tokens.length - 3])
+        sign?.kind === "punct" &&
+        sign.value === previous.value &&
+        sign.offset !== undefined &&
+        previous.offset === sign.offset + 1 &&
+        endsExpression(tokens[tokens.length - 3])
       ) {
         return false;
       }
@@ -200,7 +229,13 @@ function scanScript(content: string): Token[] | null {
       index++;
       continue;
     }
-    if (character === " " || character === "\t" || character === "\r" || character === "\f" || character === "\v") {
+    if (
+      character === " " ||
+      character === "\t" ||
+      character === "\r" ||
+      character === "\f" ||
+      character === "\v"
+    ) {
       index++;
       continue;
     }
@@ -320,7 +355,9 @@ function skipBraces(tokens: Token[], at: number): number {
 }
 
 function isWord(token: Token | undefined, value?: string): boolean {
-  return token !== undefined && token.kind === "word" && (value === undefined || token.value === value);
+  return (
+    token !== undefined && token.kind === "word" && (value === undefined || token.value === value)
+  );
 }
 
 function isPunct(token: Token | undefined, value: string): boolean {
@@ -348,20 +385,35 @@ function scriptImports(tokens: Token[]): { imports: ScriptImport[]; dynamic: num
       }
       if (isPunct(tokens[cursor], ".")) continue; // import.meta
       if (tokens[cursor]?.kind === "string") {
-        imports.push({ specifier: tokens[cursor].value, startLine: token.line, endLine: tokens[cursor].line });
+        imports.push({
+          specifier: tokens[cursor].value,
+          startLine: token.line,
+          endLine: tokens[cursor].line,
+        });
         continue;
       }
-      if (isWord(tokens[cursor], "type") && !isWord(tokens[cursor + 1], "from") && !isPunct(tokens[cursor + 1], ",")) cursor++;
+      if (
+        isWord(tokens[cursor], "type") &&
+        !isWord(tokens[cursor + 1], "from") &&
+        !isPunct(tokens[cursor + 1], ",")
+      )
+        cursor++;
       if (isWord(tokens[cursor]) && !isWord(tokens[cursor], "from")) {
         cursor++;
         if (isPunct(tokens[cursor], "=")) continue; // import x = require("s"): the require rule reads it
         if (isPunct(tokens[cursor], ",")) cursor++;
       }
       if (isPunct(tokens[cursor], "{")) cursor = skipBraces(tokens, cursor);
-      else if (isPunct(tokens[cursor], "*") && isWord(tokens[cursor + 1], "as") && isWord(tokens[cursor + 2])) cursor += 3;
+      else if (
+        isPunct(tokens[cursor], "*") &&
+        isWord(tokens[cursor + 1], "as") &&
+        isWord(tokens[cursor + 2])
+      )
+        cursor += 3;
       if (cursor < 0) continue;
       const source = fromClause(tokens, cursor);
-      if (source) imports.push({ specifier: source.value, startLine: token.line, endLine: source.line });
+      if (source)
+        imports.push({ specifier: source.value, startLine: token.line, endLine: source.line });
       continue;
     }
 
@@ -375,15 +427,24 @@ function scriptImports(tokens: Token[]): { imports: ScriptImport[]; dynamic: num
       } else continue;
       if (cursor < 0) continue;
       const source = fromClause(tokens, cursor);
-      if (source) imports.push({ specifier: source.value, startLine: token.line, endLine: source.line });
+      if (source)
+        imports.push({ specifier: source.value, startLine: token.line, endLine: source.line });
       continue;
     }
 
     if (token.value === "require" && isPunct(tokens[index + 1], "(")) {
       if (isWord(previous, "function")) continue;
       const argument = tokens[index + 2];
-      if (argument?.kind === "string" && isPunct(tokens[index + 3], ")") && !argument.value.startsWith("`")) {
-        imports.push({ specifier: argument.value, startLine: token.line, endLine: tokens[index + 3].line });
+      if (
+        argument?.kind === "string" &&
+        isPunct(tokens[index + 3], ")") &&
+        !argument.value.startsWith("`")
+      ) {
+        imports.push({
+          specifier: argument.value,
+          startLine: token.line,
+          endLine: tokens[index + 3].line,
+        });
       } else {
         dynamic++;
       }
@@ -432,20 +493,31 @@ function pythonImports(lines: string[]): PythonImport[] {
     const fromMatch = /^from\s+(\.*)([A-Za-z_][\w.]*)?\s+import\b/.exec(statement);
     if (fromMatch) {
       if (fromMatch[1] === "" && !fromMatch[2]) continue;
-      imports.push({ level: fromMatch[1].length, module: fromMatch[2] ?? "", line: startIndex + 1, endLine: index + 1 });
+      imports.push({
+        level: fromMatch[1].length,
+        module: fromMatch[2] ?? "",
+        line: startIndex + 1,
+        endLine: index + 1,
+      });
       continue;
     }
     const importMatch = /^import\s+(.+)$/.exec(statement);
     if (!importMatch) continue;
     for (const part of importMatch[1].split(",")) {
       const name = /^\s*([A-Za-z_][\w.]*)(?:\s+as\s+[A-Za-z_]\w*)?\s*$/.exec(part);
-      if (name) imports.push({ level: 0, module: name[1], line: startIndex + 1, endLine: index + 1 });
+      if (name)
+        imports.push({ level: 0, module: name[1], line: startIndex + 1, endLine: index + 1 });
     }
   }
   return imports;
 }
 
-function classifyPython(sourcePath: string, item: PythonImport, excerpt: string, input: ExtractorFileInput): AssertionDraft {
+function classifyPython(
+  sourcePath: string,
+  item: PythonImport,
+  excerpt: string,
+  input: ExtractorFileInput,
+): AssertionDraft {
   const range = spanRange(item.line - 1, item.endLine - 1);
   if (item.level === 0) return observed("source.import.absolute", item.module, range, excerpt);
   const written = `${".".repeat(item.level)}${item.module}`;
@@ -460,9 +532,8 @@ function classifyPython(sourcePath: string, item: PythonImport, excerpt: string,
   const stem = item.module === "" ? base : base === "." ? modulePath : `${base}/${modulePath}`;
   const at = (name: string): string => (stem === "." ? name : `${stem}/${name}`);
   // A regular package (`__init__.py`) takes precedence over a module of the same name.
-  const candidates = item.module === ""
-    ? [at("__init__.py")]
-    : [at("__init__.py"), `${stem}.py`, `${stem}.pyi`];
+  const candidates =
+    item.module === "" ? [at("__init__.py")] : [at("__init__.py"), `${stem}.py`, `${stem}.pyi`];
   const found = candidates.find((candidate) => input.pathExists(candidate));
   return found !== undefined
     ? observed("source.import.local", found, range, excerpt)
@@ -475,14 +546,16 @@ function importAssertions(input: ExtractorFileInput): AssertionDraft[] {
   const lines = toLines(input.content);
   if (PYTHON.test(input.sourcePath)) {
     return pythonImports(lines).map((item) =>
-      classifyPython(input.sourcePath, item, lines[item.line - 1] ?? "", input));
+      classifyPython(input.sourcePath, item, lines[item.line - 1] ?? "", input),
+    );
   }
   const tokens = scanScript(input.content);
   if (tokens === null) {
     input.report?.({
       code: "source_import.scan_incomplete",
       severity: "warning",
-      message: "the file could not be scanned to its end (unterminated string, comment or expression); no imports were observed",
+      message:
+        "the file could not be scanned to its end (unterminated string, comment or expression); no imports were observed",
     });
     return [];
   }
@@ -494,13 +567,15 @@ function importAssertions(input: ExtractorFileInput): AssertionDraft[] {
       message: `${dynamic} dynamic import or require call(s) were not interpreted`,
     });
   }
-  return imports.map((item) => classifyScript(
-    input.sourcePath,
-    item.specifier,
-    spanRange(item.startLine - 1, item.endLine - 1),
-    lines[item.startLine - 1] ?? "",
-    input,
-  ));
+  return imports.map((item) =>
+    classifyScript(
+      input.sourcePath,
+      item.specifier,
+      spanRange(item.startLine - 1, item.endLine - 1),
+      lines[item.startLine - 1] ?? "",
+      input,
+    ),
+  );
 }
 
 export const staticImportExtractor: Extractor = {

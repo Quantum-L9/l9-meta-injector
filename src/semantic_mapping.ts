@@ -40,7 +40,14 @@ export const ARTIFACT_HEADER_LEDGER = {
 export type HeaderFieldCategory = "identity" | "classification" | "governance" | "retrieval";
 
 /** The ledger's `value_kinds`. */
-export type HeaderValueKind = "label" | "label_list" | "path" | "reference_list" | "url" | "count" | "text";
+export type HeaderValueKind =
+  | "label"
+  | "label_list"
+  | "path"
+  | "reference_list"
+  | "url"
+  | "count"
+  | "text";
 
 /**
  * How many objects one subject may hold at once. A list-valued field declares
@@ -180,10 +187,14 @@ export function governedHeaderPredicates(): GovernedPredicate[] {
 
 /** Resolve an emitted predicate back to its governed meaning, or undefined. */
 export function governedMeaningOf(predicate: string): GovernedPredicate | undefined {
-  const match = /^meta\.([a-z0-9]+)\.(identity|classification|governance|retrieval)\.([a-z_]+)$/.exec(predicate);
+  const match =
+    /^meta\.([a-z0-9]+)\.(identity|classification|governance|retrieval)\.([a-z_]+)$/.exec(
+      predicate,
+    );
   if (!match) return undefined;
-  const declared_schema = Object.keys(RECOGNIZED_DECLARED_SCHEMAS)
-    .find((schema) => RECOGNIZED_DECLARED_SCHEMAS[schema] === match[1]);
+  const declared_schema = Object.keys(RECOGNIZED_DECLARED_SCHEMAS).find(
+    (schema) => RECOGNIZED_DECLARED_SCHEMAS[schema] === match[1],
+  );
   const mapping = BY_FIELD.get(match[3]);
   if (declared_schema === undefined || mapping?.category !== match[2]) return undefined;
   return { predicate, declared_schema, mapping };
@@ -204,7 +215,10 @@ export interface LedgerFieldRecord {
  * six-space `declared_values:` map — and reports anything it cannot place
  * rather than guessing. It reads; it never decides what a field means.
  */
-export function readLedgerFields(ledgerText: string): { fields: LedgerFieldRecord[]; problems: string[] } {
+export function readLedgerFields(ledgerText: string): {
+  fields: LedgerFieldRecord[];
+  problems: string[];
+} {
   const lines = ledgerText.split(/\r?\n/);
   const start = lines.indexOf("fields:");
   if (start < 0) return { fields: [], problems: ["ledger has no top-level `fields:` block"] };
@@ -285,7 +299,9 @@ export function compareMappingToLedger(ledgerText: string): string[] {
   if (boundary === undefined) {
     out.push("ledger has no projection_boundary.canonical_relations");
   } else if (boundary !== HEADER_DECLARATION_POLICY.projection) {
-    out.push(`ledger projection_boundary.canonical_relations is ${boundary}, mapping projection is ${HEADER_DECLARATION_POLICY.projection}`);
+    out.push(
+      `ledger projection_boundary.canonical_relations is ${boundary}, mapping projection is ${HEADER_DECLARATION_POLICY.projection}`,
+    );
   }
   const ledger = new Map(fields.map((record) => [record.field, record]));
   for (const mapping of NATIVE_HEADER_FIELDS) {
@@ -295,14 +311,19 @@ export function compareMappingToLedger(ledgerText: string): string[] {
       continue;
     }
     if (record.category !== mapping.category) {
-      out.push(`field ${mapping.field}: mapping category ${mapping.category}, ledger ${record.category}`);
+      out.push(
+        `field ${mapping.field}: mapping category ${mapping.category}, ledger ${record.category}`,
+      );
     }
     if (record.value_kind !== mapping.value_kind) {
-      out.push(`field ${mapping.field}: mapping value_kind ${mapping.value_kind}, ledger ${record.value_kind}`);
+      out.push(
+        `field ${mapping.field}: mapping value_kind ${mapping.value_kind}, ledger ${record.value_kind}`,
+      );
     }
     const mine = [...(mapping.declared_values ?? [])].sort(compareCodePoints).join(",");
     const theirs = [...record.declared_values].sort(compareCodePoints).join(",");
-    if (mine !== theirs) out.push(`field ${mapping.field}: declared values [${mine}] vs ledger [${theirs}]`);
+    if (mine !== theirs)
+      out.push(`field ${mapping.field}: declared values [${mine}] vs ledger [${theirs}]`);
   }
   for (const record of fields) {
     if (!BY_FIELD.has(record.field)) out.push(`ledger field ${record.field} has no mapping entry`);

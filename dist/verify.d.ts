@@ -1,4 +1,4 @@
-import { VerifyResult, NormalizedMeta } from "./schema";
+import { NormalizedMeta, VerifyResult } from "./schema";
 export declare function verify(filePath: string, origHash: string, meta: NormalizedMeta, options?: {
     semanticallyBound?: boolean;
     /**

@@ -6,7 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isGitIgnored, type GitIgnoredPaths } from "./git_ignored";
+import { type GitIgnoredPaths, isGitIgnored } from "./git_ignored";
 
 export const L9_METAIGNORE_FILENAME = ".l9metaignore";
 
@@ -23,10 +23,7 @@ export const BUILTIN_NOISE_PATTERNS: readonly string[] = [
  * Built-in protect for inventory + pipeline: Cursor Agent Skill entrypoints.
  * Matched case-insensitively on basename in addition to these glob patterns.
  */
-export const BUILTIN_SKILL_PROTECT_PATTERNS: readonly string[] = [
-  "**/SKILL.md",
-  "**/skill.md",
-];
+export const BUILTIN_SKILL_PROTECT_PATTERNS: readonly string[] = ["**/SKILL.md", "**/skill.md"];
 
 export interface OmitOptions {
   /** Scan root used to load `.l9metaignore` when present. */
@@ -87,7 +84,9 @@ function decodeUtf8Strict(bytes: Buffer, label: string): string {
     if (decoded.includes("\u0000")) throw new Error("contains a NUL byte");
     return decoded;
   } catch (error) {
-    throw new Error(`${label} is not valid UTF-8 text: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} is not valid UTF-8 text: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -100,14 +99,18 @@ function readOmitFileStrict(filePath: string, label: string, required: boolean):
     // An optional ignore file is simply absent when there is no regular file at
     // the path: ENOENT (nothing there) or ENOTDIR (a path component is a file).
     if (!required && (code === "ENOENT" || code === "ENOTDIR")) return [];
-    throw new Error(`${label} cannot be inspected: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} cannot be inspected: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   if (stat.isSymbolicLink()) throw new Error(`${label} must not be a symbolic link: ${filePath}`);
   if (!stat.isFile()) throw new Error(`${label} must be a regular file: ${filePath}`);
   try {
     return parseOmitFile(decodeUtf8Strict(fs.readFileSync(filePath), label));
   } catch (error) {
-    throw new Error(`${label} cannot be loaded: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} cannot be loaded: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -204,7 +207,9 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
   if (opts.omitFile !== undefined) {
     const supplied = opts.omitFile.trim();
     if (!supplied) throw new Error("--omit-file must not be empty");
-    const absolute = path.isAbsolute(supplied) ? path.resolve(supplied) : path.resolve(root, supplied);
+    const absolute = path.isAbsolute(supplied)
+      ? path.resolve(supplied)
+      : path.resolve(root, supplied);
     patterns.push(...readOmitFileStrict(absolute, "--omit-file", true));
     sources.push(absolute);
   }

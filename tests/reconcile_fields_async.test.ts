@@ -1,19 +1,28 @@
+import { resetAdapter, setAdapter } from "../src/llm";
 import { reconcileFieldsAsync } from "../src/reconcile_fields";
 import { UNKNOWN } from "../src/schema";
-import { setAdapter, resetAdapter } from "../src/llm";
 
 afterEach(() => resetAdapter());
 
 describe("reconcileFieldsAsync — derived fields", () => {
   it("takes the incoming id without asking the LLM", async () => {
     let calls = 0;
-    setAdapter({ estimateTokens: () => 1, classify: async () => { calls += 1; return "no"; } });
+    setAdapter({
+      estimateTokens: () => 1,
+      classify: async () => {
+        calls += 1;
+        return "no";
+      },
+    });
     const { merged, diffs } = await reconcileFieldsAsync(
       { id: "l9.source.index" },
       { id: "l9.source.src_index__ts" },
     );
     expect(merged.id).toBe("l9.source.src_index__ts");
-    expect(diffs.find((d) => d.field === "id")).toMatchObject({ action: "revise", reason: "derived field recomputed" });
+    expect(diffs.find((d) => d.field === "id")).toMatchObject({
+      action: "revise",
+      reason: "derived field recomputed",
+    });
     expect(calls).toBe(0);
   });
 });
@@ -23,10 +32,17 @@ describe("reconcileFieldsAsync — LLM boolean for description", () => {
     let calls: string[] = [];
     setAdapter({
       estimateTokens: () => 1,
-      classify: async (prompt) => { calls.push(prompt); return "yes"; }
+      classify: async (prompt) => {
+        calls.push(prompt);
+        return "yes";
+      },
     });
-    const existing = { description: "Processes documents in some basic way and outputs results for users." };
-    const incoming = { description: "Processes and normalizes documents into structured JSON for retrieval." };
+    const existing = {
+      description: "Processes documents in some basic way and outputs results for users.",
+    };
+    const incoming = {
+      description: "Processes and normalizes documents into structured JSON for retrieval.",
+    };
     const { merged, diffs } = await reconcileFieldsAsync(existing, incoming);
     expect(calls.some((c) => c.includes("description"))).toBe(true);
     expect(merged.description).toBe(incoming.description);
@@ -36,7 +52,9 @@ describe("reconcileFieldsAsync — LLM boolean for description", () => {
 
   it("keeps old when LLM returns no", async () => {
     setAdapter({ estimateTokens: () => 1, classify: async () => "no" });
-    const existing = { description: "Processes documents into structured JSON output for retrieval pipeline." };
+    const existing = {
+      description: "Processes documents into structured JSON output for retrieval pipeline.",
+    };
     const incoming = { description: "Does similar stuff." };
     const { merged, diffs } = await reconcileFieldsAsync(existing, incoming);
     expect(merged.description).toBe(existing.description);
@@ -45,9 +63,18 @@ describe("reconcileFieldsAsync — LLM boolean for description", () => {
 
   it("falls back to sync heuristic for non-prose-scalar fields (e.g. title)", async () => {
     let called = false;
-    setAdapter({ estimateTokens: () => 1, classify: async () => { called = true; return "yes"; } });
+    setAdapter({
+      estimateTokens: () => 1,
+      classify: async () => {
+        called = true;
+        return "yes";
+      },
+    });
     const existing = { title: "Old Title" };
-    const incoming = { title: "New Title That Is Much Longer And Contains More Specific Information About The Artifact Domain Area" };
+    const incoming = {
+      title:
+        "New Title That Is Much Longer And Contains More Specific Information About The Artifact Domain Area",
+    };
     await reconcileFieldsAsync(existing, incoming);
     // title is not in LLM_MATERIALITY_FIELDS — should NOT call LLM
     expect(called).toBe(false);
@@ -55,25 +82,37 @@ describe("reconcileFieldsAsync — LLM boolean for description", () => {
 
   it("list fields still union without LLM call", async () => {
     let called = false;
-    setAdapter({ estimateTokens: () => 1, classify: async () => { called = true; return "yes"; } });
+    setAdapter({
+      estimateTokens: () => 1,
+      classify: async () => {
+        called = true;
+        return "yes";
+      },
+    });
     const existing = { triggers: ["text chunking", "split doc"] };
     const incoming = { triggers: ["retrieval prep", "text chunking"] };
     const { merged } = await reconcileFieldsAsync(existing, incoming);
     expect(called).toBe(false); // no LLM call for list fields
-    expect((merged.triggers as string[])).toContain("retrieval prep");
-    expect((merged.triggers as string[]).filter(s => s === "text chunking")).toHaveLength(1);
+    expect(merged.triggers as string[]).toContain("retrieval prep");
+    expect((merged.triggers as string[]).filter((s) => s === "text chunking")).toHaveLength(1);
   });
 
   it("replace on deprecated without LLM regardless", async () => {
     setAdapter({ estimateTokens: () => 1, classify: async () => "no" }); // LLM says no — but replace wins
-    const { diffs } = await reconcileFieldsAsync({ deprecated: true, description: "Old." }, { description: "New." });
-    expect(diffs.find(d => d.field === "description")?.action).toBe("replace");
+    const { diffs } = await reconcileFieldsAsync(
+      { deprecated: true, description: "Old." },
+      { description: "New." },
+    );
+    expect(diffs.find((d) => d.field === "description")?.action).toBe("replace");
   });
 });
 
 describe("reconcileFieldsAsync — .txt / prose files (no frontmatter)", () => {
   it("adds all fields when existing is empty (first injection on .txt)", async () => {
-    const { diffs } = await reconcileFieldsAsync({}, { namespace: "l9", artifact_type: "context", description: UNKNOWN });
-    expect(diffs.every(d => d.action === "add")).toBe(true);
+    const { diffs } = await reconcileFieldsAsync(
+      {},
+      { namespace: "l9", artifact_type: "context", description: UNKNOWN },
+    );
+    expect(diffs.every((d) => d.action === "add")).toBe(true);
   });
 });

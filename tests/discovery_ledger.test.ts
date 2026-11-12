@@ -35,7 +35,9 @@ describe("terminal discovery ledger", () => {
     const paths = result.summary.entries.map((entry) => entry.path);
     expect(new Set(paths).size).toBe(paths.length);
     expect(result.summary.total).toBe(result.summary.entries.length);
-    expect(Object.values(result.summary.byDisposition).reduce((a, b) => a + b, 0)).toBe(result.summary.total);
+    expect(Object.values(result.summary.byDisposition).reduce((a, b) => a + b, 0)).toBe(
+      result.summary.total,
+    );
     for (const disposition of DISCOVERY_DISPOSITIONS) {
       expect(result.summary.byDisposition).toHaveProperty(disposition);
     }
@@ -50,10 +52,9 @@ describe("terminal discovery ledger", () => {
     expect(byPath.get(".github")?.disposition).toBe("hidden_control");
     expect(byPath.get("linked.md")?.disposition).toBe("symlink");
     expect(result.summary.blocking).toBe(1);
-    expect(result.files.map((file) => path.relative(root, file).split(path.sep).join("/"))).toEqual([
-      "eligible.md",
-      "visible/note.txt",
-    ]);
+    expect(result.files.map((file) => path.relative(root, file).split(path.sep).join("/"))).toEqual(
+      ["eligible.md", "visible/note.txt"],
+    );
     expect(paths.every((item) => !path.isAbsolute(item))).toBe(true);
   });
 
@@ -71,7 +72,9 @@ describe("terminal discovery ledger", () => {
     fs.writeFileSync(path.join(root, "page.php"), "<html><?php echo 1; ?></html>\n", "utf8");
     fs.writeFileSync(path.join(root, "lib.php"), "<?php\nfunction f() {}\n", "utf8");
     fs.writeFileSync(path.join(root, "data.unknownext"), "plain\n", "utf8");
-    const byPath = new Map(discoverFiles(root, "**/*").summary.entries.map((entry) => [entry.path, entry]));
+    const byPath = new Map(
+      discoverFiles(root, "**/*").summary.entries.map((entry) => [entry.path, entry]),
+    );
     for (const name of ["page.php", "lib.php"]) {
       expect(byPath.get(name)?.disposition, name).toBe("eligible");
       expect(byPath.get(name)?.reason, name).toBe("known text extension");

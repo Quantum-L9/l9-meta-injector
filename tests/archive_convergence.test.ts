@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  ARCHIVE_READER_VERSION,
   ArchiveExecutionContext,
   resolveArchiveExecution,
 } from "../src/archive_execution";
@@ -13,7 +14,6 @@ import {
   listZipMembers,
 } from "../src/archives";
 import { streamZipMember } from "../src/zip_reader";
-import { ARCHIVE_READER_VERSION } from "../src/archive_execution";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const EOCD_SIGNATURE = 0x06054b50;
@@ -169,22 +169,28 @@ describe("archive convergence invariants", () => {
 
     expect(second.archives[0].heldReason).toMatch(/archive\.integrity_failed.*CRC/);
     expect(fs.readFileSync(path.join(target, "bad.txt"), "utf8")).toBe("data");
-    expect(fs.readdirSync(root).some((name) => name.includes("candidate-") || name.includes("previous-")))
-      .toBe(false);
+    expect(
+      fs
+        .readdirSync(root)
+        .some((name) => name.includes("candidate-") || name.includes("previous-")),
+    ).toBe(false);
   });
 
   test("invalid programmatic policy values fail closed before archive execution", () => {
     const root = tmp();
     writeRawZip(path.join(root, "A.zip"), [{ name: "a.txt", content: "a" }]);
 
-    expect(() => expandArchivesUnderRoot(root, {
-      dryRun: false,
-      verbose: false,
-      archivePolicy: { maxMemberCount: Number.POSITIVE_INFINITY },
-    })).toThrow(/maxMemberCount must be a positive finite integer/);
+    expect(() =>
+      expandArchivesUnderRoot(root, {
+        dryRun: false,
+        verbose: false,
+        archivePolicy: { maxMemberCount: Number.POSITIVE_INFINITY },
+      }),
+    ).toThrow(/maxMemberCount must be a positive finite integer/);
 
-    expect(() => resolveArchiveExecution({ maxNestedDepth: -1 }))
-      .toThrow(/maxNestedDepth must be a non-negative finite integer/);
+    expect(() => resolveArchiveExecution({ maxNestedDepth: -1 })).toThrow(
+      /maxNestedDepth must be a non-negative finite integer/,
+    );
   });
 
   test("an archive context keeps reading the immutable staged bytes after the live path changes", () => {

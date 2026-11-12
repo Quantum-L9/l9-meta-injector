@@ -17,12 +17,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { EvidenceQueryResponse } from "../src/corpus_query";
 import {
   CORPUS_EVIDENCE_QUERY_SCHEMA,
   queryCorpusEvidence,
   renderEvidenceQueryResponse,
 } from "../src/corpus_query";
-import type { EvidenceQueryResponse } from "../src/corpus_query";
 import { writeDocx } from "./helpers/document_fixtures";
 
 const REPO = path.resolve(__dirname, "..");
@@ -47,31 +47,35 @@ function write(root: string, relative: string, contents: string): void {
 
 /** The mixed-format corpus: a WIP proposal, a Word specification, a handoff, an untyped note. */
 function writeCorpus(root: string): void {
-  write(root, "plans/gate-routing-proposal.md", [
-    "---",
-    "type: proposal",
-    "status: wip",
-    "---",
-    "# Routing Through Gate",
-    "",
-    "Objective: Make every inter-node call pass through Gate so routing has one authority.",
-    "",
-    "## Constraints",
-    "",
-    "- TransportPacket is the only wire format.",
-    "- No node holds a peer URL.",
-    "",
-    "## Open Questions",
-    "",
-    "- Does Gate need a retry budget per tenant?",
-    "- Who owns the audit log schema?",
-    "",
-    "Decision: Routing tables are derived from the packet header, not from node config.",
-    "Decision: Audit log writes are append-only.",
-    "",
-    "Status: blocked",
-    "",
-  ].join("\n"));
+  write(
+    root,
+    "plans/gate-routing-proposal.md",
+    [
+      "---",
+      "type: proposal",
+      "status: wip",
+      "---",
+      "# Routing Through Gate",
+      "",
+      "Objective: Make every inter-node call pass through Gate so routing has one authority.",
+      "",
+      "## Constraints",
+      "",
+      "- TransportPacket is the only wire format.",
+      "- No node holds a peer URL.",
+      "",
+      "## Open Questions",
+      "",
+      "- Does Gate need a retry budget per tenant?",
+      "- Who owns the audit log schema?",
+      "",
+      "Decision: Routing tables are derived from the packet header, not from node config.",
+      "Decision: Audit log writes are append-only.",
+      "",
+      "Status: blocked",
+      "",
+    ].join("\n"),
+  );
   writeDocx(path.join(root, "specs", "transport-packet-spec.docx"), {
     title: "TransportPacket Specification",
     headings: ["Invariants"],
@@ -82,21 +86,25 @@ function writeCorpus(root: string): void {
       "Open question: Should hop limits be enforced by Gate or by the chassis?",
     ],
   });
-  write(root, "handoffs/chassis-auth-handoff.md", [
-    "# Chassis Auth Handoff",
-    "",
-    "Status: blocked",
-    "",
-    "Constraints:",
-    "- Engines contain no auth, routing or FastAPI routes.",
-    "",
-    "- [ ] Move the auth middleware into the chassis",
-    "",
-    "Blocked by: security review",
-    "",
-    "Unresolved: Which tenant header the gateway forwards on a cross-tenant hop.",
-    "",
-  ].join("\n"));
+  write(
+    root,
+    "handoffs/chassis-auth-handoff.md",
+    [
+      "# Chassis Auth Handoff",
+      "",
+      "Status: blocked",
+      "",
+      "Constraints:",
+      "- Engines contain no auth, routing or FastAPI routes.",
+      "",
+      "- [ ] Move the auth middleware into the chassis",
+      "",
+      "Blocked by: security review",
+      "",
+      "Unresolved: Which tenant header the gateway forwards on a cross-tenant hop.",
+      "",
+    ].join("\n"),
+  );
   write(root, "notes/untyped.md", "Objective: Keep the gateway stateless.\n");
 }
 
@@ -107,11 +115,27 @@ interface Generated {
   status: number | null;
 }
 
-function scan(root: string, extra: string[] = [], out = path.join(tmp("l9-corpus-query-out-"), "observation")): Generated {
+function scan(
+  root: string,
+  extra: string[] = [],
+  out = path.join(tmp("l9-corpus-query-out-"), "observation"),
+): Generated {
   const cache = path.join(tmp("l9-corpus-query-cache-"), "cache");
-  const result = cp.spawnSync(process.execPath, [
-    SCAN_CLI, "--root", `${root}=Designs`, "--out", out, "--cache-dir", cache, "--no-diff", ...extra,
-  ], { encoding: "utf8" });
+  const result = cp.spawnSync(
+    process.execPath,
+    [
+      SCAN_CLI,
+      "--root",
+      `${root}=Designs`,
+      "--out",
+      out,
+      "--cache-dir",
+      cache,
+      "--no-diff",
+      ...extra,
+    ],
+    { encoding: "utf8" },
+  );
   if (result.status !== 0) throw new Error(`scan failed: ${result.stderr}`);
   return { root, out, stdout: result.stdout, status: result.status };
 }
@@ -128,16 +152,28 @@ function treeHashes(dir: string): Map<string, string> {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const absolute = path.join(current, entry.name);
       if (entry.isDirectory()) walk(absolute);
-      else out.set(path.relative(dir, absolute), crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"));
+      else
+        out.set(
+          path.relative(dir, absolute),
+          crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"),
+        );
     }
   };
   walk(dir);
   return out;
 }
 
-function runQuery(args: string[]): { status: number | null; response: EvidenceQueryResponse; stdout: string } {
+function runQuery(args: string[]): {
+  status: number | null;
+  response: EvidenceQueryResponse;
+  stdout: string;
+} {
   const result = cp.spawnSync(process.execPath, [QUERY_CLI, ...args], { encoding: "utf8" });
-  return { status: result.status, response: JSON.parse(result.stdout) as EvidenceQueryResponse, stdout: result.stdout };
+  return {
+    status: result.status,
+    response: JSON.parse(result.stdout) as EvidenceQueryResponse,
+    stdout: result.stdout,
+  };
 }
 
 /** A tamperable copy of a generation's output directory. */
@@ -160,13 +196,22 @@ beforeAll(() => {
 
 describe("A. architectural discovery", () => {
   it("finds the explicitly recorded open questions about a subject, each at its coordinate", () => {
-    const response = queryCorpusEvidence({ outDir: evidence.out, statementClass: "open_question", text: "Gate" });
+    const response = queryCorpusEvidence({
+      outDir: evidence.out,
+      statementClass: "open_question",
+      text: "Gate",
+    });
     expect(response.outcome).toBe("ok");
     expect(response.generation?.corpus_status).toBe("complete");
-    expect(response.results.map((record) => [record.source_path, record.value])).toEqual([
-      ["plans/gate-routing-proposal.md", "Does Gate need a retry budget per tenant?"],
-      ["specs/transport-packet-spec.docx", "Should hop limits be enforced by Gate or by the chassis?"],
-    ].sort((a, b) => (a[0] as string).localeCompare(b[0] as string)) as never);
+    expect(response.results.map((record) => [record.source_path, record.value])).toEqual(
+      [
+        ["plans/gate-routing-proposal.md", "Does Gate need a retry budget per tenant?"],
+        [
+          "specs/transport-packet-spec.docx",
+          "Should hop limits be enforced by Gate or by the chassis?",
+        ],
+      ].sort((a, b) => (a[0] as string).localeCompare(b[0] as string)) as never,
+    );
     // Every answer carries the identities a reader needs to resolve it, as the
     // generation wrote them, and nothing a reader would have to take on trust.
     for (const record of response.results) {
@@ -193,8 +238,16 @@ describe("A. architectural discovery", () => {
       "TransportPacket is the only wire format.",
     ]);
     // The same document addressed by either identity gives the same answer.
-    const byId = queryCorpusEvidence({ outDir: evidence.out, statementClass: "constraint", artifact: response.results[0]?.artifact_id });
-    const byRmp = queryCorpusEvidence({ outDir: evidence.out, statementClass: "constraint", artifact: response.results[0]?.rmp_artifact_id });
+    const byId = queryCorpusEvidence({
+      outDir: evidence.out,
+      statementClass: "constraint",
+      artifact: response.results[0]?.artifact_id,
+    });
+    const byRmp = queryCorpusEvidence({
+      outDir: evidence.out,
+      statementClass: "constraint",
+      artifact: response.results[0]?.rmp_artifact_id,
+    });
     expect(byId.results).toEqual(response.results);
     expect(byRmp.results).toEqual(response.results);
   });
@@ -204,7 +257,11 @@ describe("A. architectural discovery", () => {
 
 describe("B. WIP discrimination", () => {
   it("returns a WIP document's recorded decisions beside its WIP status, never as accepted", () => {
-    const response = queryCorpusEvidence({ outDir: evidence.out, statementClass: "decision_statement", status: "wip" });
+    const response = queryCorpusEvidence({
+      outDir: evidence.out,
+      statementClass: "decision_statement",
+      status: "wip",
+    });
     expect(response.outcome).toBe("ok");
     expect(response.results.map((record) => record.value).sort()).toEqual([
       "Audit log writes are append-only.",
@@ -216,9 +273,15 @@ describe("B. WIP discrimination", () => {
       expect(record.epistemic_class).toBe("source-declared");
       // The document declared `status: wip` in frontmatter and `Status: blocked`
       // at the bottom. Both are returned; matching one did not erase the other.
-      expect(record.document_declarations.statuses.map((ref) => ref.object)).toEqual(["blocked", "wip"]);
+      expect(record.document_declarations.statuses.map((ref) => ref.object)).toEqual([
+        "blocked",
+        "wip",
+      ]);
       expect(record.document_declarations.kinds.map((ref) => ref.object)).toEqual(["proposal"]);
-      for (const ref of [...record.document_declarations.statuses, ...record.document_declarations.kinds]) {
+      for (const ref of [
+        ...record.document_declarations.statuses,
+        ...record.document_declarations.kinds,
+      ]) {
         expect(ref.assertion_id.startsWith("assertion:")).toBe(true);
       }
       expect(record.selection?.roles).toEqual(["wip_proposal"]);
@@ -231,14 +294,34 @@ describe("B. WIP discrimination", () => {
   });
 
   it("answers the same question through the CLI with the same bytes", () => {
-    const first = runQuery(["--out", evidence.out, "--class", "decision_statement", "--status", "wip"]);
-    const second = runQuery(["--out", evidence.out, "--class", "decision_statement", "--status", "wip"]);
+    const first = runQuery([
+      "--out",
+      evidence.out,
+      "--class",
+      "decision_statement",
+      "--status",
+      "wip",
+    ]);
+    const second = runQuery([
+      "--out",
+      evidence.out,
+      "--class",
+      "decision_statement",
+      "--status",
+      "wip",
+    ]);
     expect(first.status).toBe(0);
     expect(first.stdout).toBe(second.stdout);
     expect(first.response.schema).toBe(CORPUS_EVIDENCE_QUERY_SCHEMA);
-    expect(first.stdout).toBe(renderEvidenceQueryResponse(
-      queryCorpusEvidence({ outDir: evidence.out, statementClass: "decision_statement", status: "wip" }),
-    ));
+    expect(first.stdout).toBe(
+      renderEvidenceQueryResponse(
+        queryCorpusEvidence({
+          outDir: evidence.out,
+          statementClass: "decision_statement",
+          status: "wip",
+        }),
+      ),
+    );
   });
 });
 
@@ -248,7 +331,9 @@ describe("C. exact evidence retrieval", () => {
   it("returns a Markdown status at its line and a Word status at its block, each verifiable", () => {
     const response = queryCorpusEvidence({ outDir: evidence.out, predicate: "work.status" });
     expect(response.outcome).toBe("ok");
-    const markdown = response.results.filter((record) => record.source === "repository_model_packet");
+    const markdown = response.results.filter(
+      (record) => record.source === "repository_model_packet",
+    );
     const word = response.results.filter((record) => record.source === "document_work_signals");
     expect(markdown.length).toBeGreaterThanOrEqual(3);
     expect(word).toHaveLength(1);
@@ -256,8 +341,12 @@ describe("C. exact evidence retrieval", () => {
     for (const record of markdown) {
       expect(record.source_range).not.toBeNull();
       expect(record.structured_locator).toBeNull();
-      const lines = fs.readFileSync(path.join(evidence.root, record.source_path), "utf8").split("\n");
-      const cited = lines.slice((record.source_range?.start_line ?? 1) - 1, record.source_range?.end_line ?? 0).join("\n");
+      const lines = fs
+        .readFileSync(path.join(evidence.root, record.source_path), "utf8")
+        .split("\n");
+      const cited = lines
+        .slice((record.source_range?.start_line ?? 1) - 1, record.source_range?.end_line ?? 0)
+        .join("\n");
       expect(cited.replace(/\s+/g, " ").trim()).toBe(record.bounded_excerpt);
       expect(record.record_id.startsWith("assertion:")).toBe(true);
     }
@@ -269,11 +358,17 @@ describe("C. exact evidence retrieval", () => {
     expect(docx?.source_range).toBeNull();
     expect(docx?.record_id.startsWith("document_assertion:")).toBe(true);
     // A result says when the generation itself cut an excerpt; none of these did.
-    expect(response.results.every((record) => record.excerpt_truncated_at_source === false)).toBe(true);
+    expect(response.results.every((record) => record.excerpt_truncated_at_source === false)).toBe(
+      true,
+    );
   });
 
   it("cuts an excerpt only on request, says so, and never invents a complete passage", () => {
-    const response = queryCorpusEvidence({ outDir: evidence.out, predicate: "document.title", maxExcerptBytes: 16 });
+    const response = queryCorpusEvidence({
+      outDir: evidence.out,
+      predicate: "document.title",
+      maxExcerptBytes: 16,
+    });
     expect(response.results.length).toBeGreaterThan(0);
     for (const record of response.results) {
       expect(Buffer.byteLength(record.bounded_excerpt, "utf8")).toBeLessThanOrEqual(16);
@@ -289,12 +384,18 @@ describe("D. integrity refusal", () => {
   it("refuses a generation whose payload has one byte changed", () => {
     const copy = copyOut(evidence.out);
     const payload = path.join(generationDir(copy), "architecture-evidence.jsonl");
-    fs.writeFileSync(payload, fs.readFileSync(payload, "utf8").replace("append-only", "append_only"), "utf8");
+    fs.writeFileSync(
+      payload,
+      fs.readFileSync(payload, "utf8").replace("append-only", "append_only"),
+      "utf8",
+    );
     const response = queryCorpusEvidence({ outDir: copy, statementClass: "decision_statement" });
     expect(response.outcome).toBe("invalid");
     expect(response.results).toEqual([]);
     expect(response.match_count).toBeNull();
-    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.file_hash_mismatch");
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.file_hash_mismatch",
+    );
     expect(runQuery(["--out", copy, "--class", "decision_statement"]).status).toBe(1);
   });
 
@@ -302,7 +403,9 @@ describe("D. integrity refusal", () => {
     const copy = copyOut(evidence.out);
     const dir = generationDir(copy);
     const payload = path.join(dir, "document-work-signals.jsonl");
-    const tampered = fs.readFileSync(payload, "utf8").replace('"object":"active"', '"object":"done"');
+    const tampered = fs
+      .readFileSync(payload, "utf8")
+      .replace('"object":"active"', '"object":"done"');
     expect(tampered).not.toBe(fs.readFileSync(payload, "utf8"));
     fs.writeFileSync(payload, tampered, "utf8");
     // An attacker who also fixes CURRENT.json's hash still meets the manifest.
@@ -317,23 +420,33 @@ describe("D. integrity refusal", () => {
     const response = queryCorpusEvidence({ outDir: copy, predicate: "work.status" });
     expect(response.outcome).toBe("invalid");
     expect(response.results).toEqual([]);
-    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.work_signals_refused");
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.work_signals_refused",
+    );
   });
 
   it("refuses a packet that is not the one the snapshot recorded for its root", () => {
     const copy = copyOut(evidence.out);
     const packet = path.join(generationDir(copy), "roots", "Designs", "bundle", "packet.json");
-    fs.writeFileSync(packet, fs.readFileSync(packet, "utf8").replace('"object":"blocked"', '"object":"done"'), "utf8");
+    fs.writeFileSync(
+      packet,
+      fs.readFileSync(packet, "utf8").replace('"object":"blocked"', '"object":"done"'),
+      "utf8",
+    );
     const response = queryCorpusEvidence({ outDir: copy, predicate: "work.status" });
     expect(response.outcome).toBe("invalid");
-    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.file_hash_mismatch");
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.file_hash_mismatch",
+    );
   });
 
   it("refuses a rewritten packet even when the pointer's hash was rewritten to match it", () => {
     const copy = copyOut(evidence.out);
     const dir = generationDir(copy);
     const packetPath = path.join(dir, "roots", "Designs", "bundle", "packet.json");
-    const tampered = fs.readFileSync(packetPath, "utf8").replace('"object":"blocked"', '"object":"done"');
+    const tampered = fs
+      .readFileSync(packetPath, "utf8")
+      .replace('"object":"blocked"', '"object":"done"');
     expect(tampered).not.toBe(fs.readFileSync(packetPath, "utf8"));
     fs.writeFileSync(packetPath, tampered, "utf8");
     const currentPath = path.join(copy, "CURRENT.json");
@@ -349,8 +462,12 @@ describe("D. integrity refusal", () => {
     const response = queryCorpusEvidence({ outDir: copy, predicate: "work.status" });
     expect(response.outcome).toBe("invalid");
     expect(response.results).toEqual([]);
-    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.packet_invalid");
-    expect(response.diagnostics[response.diagnostics.length - 1]?.message).toContain("semantic_hash");
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.packet_invalid",
+    );
+    expect(response.diagnostics[response.diagnostics.length - 1]?.message).toContain(
+      "semantic_hash",
+    );
   });
 
   it("refuses a malformed pointer file list as invalid rather than crashing", () => {
@@ -390,11 +507,16 @@ describe("D. integrity refusal", () => {
     fs.symlinkSync(outside, payload);
     const symlinked = queryCorpusEvidence({ outDir: linked, statementClass: "constraint" });
     expect(symlinked.outcome).toBe("invalid");
-    expect(symlinked.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.symlink_refused");
+    expect(symlinked.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.symlink_refused",
+    );
   });
 
   it("reports an output directory with nothing published as invalid, not empty", () => {
-    const response = queryCorpusEvidence({ outDir: tmp("l9-corpus-query-nothing-"), predicate: "work.status" });
+    const response = queryCorpusEvidence({
+      outDir: tmp("l9-corpus-query-nothing-"),
+      predicate: "work.status",
+    });
     expect(response.outcome).toBe("invalid");
     expect(response.generation).toBeNull();
     expect(response.diagnostics[0]?.code).toBe("query.no_generation");
@@ -411,10 +533,24 @@ describe("E. incomplete corpus", () => {
     const missing = path.join(path.dirname(root), "Unplugged");
     const out = path.join(tmp("l9-corpus-query-partial-out-"), "observation");
     const cache = path.join(tmp("l9-corpus-query-partial-cache-"), "cache");
-    const result = cp.spawnSync(process.execPath, [
-      SCAN_CLI, "--root", `${root}=Designs`, "--root", `${missing}=Unplugged`,
-      "--out", out, "--cache-dir", cache, "--no-diff", "--allow-partial-roots", "--architecture-evidence",
-    ], { encoding: "utf8" });
+    const result = cp.spawnSync(
+      process.execPath,
+      [
+        SCAN_CLI,
+        "--root",
+        `${root}=Designs`,
+        "--root",
+        `${missing}=Unplugged`,
+        "--out",
+        out,
+        "--cache-dir",
+        cache,
+        "--no-diff",
+        "--allow-partial-roots",
+        "--architecture-evidence",
+      ],
+      { encoding: "utf8" },
+    );
     expect(result.status, result.stderr).toBe(0);
 
     const partial = queryCorpusEvidence({ outDir: out, statementClass: "open_question" });
@@ -422,16 +558,26 @@ describe("E. incomplete corpus", () => {
     expect(partial.generation?.corpus_status).toBe("partial");
     expect(partial.generation?.missing_root_ids).toHaveLength(1);
     expect(partial.results.length).toBeGreaterThan(0);
-    expect(partial.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.corpus_incomplete");
+    expect(partial.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.corpus_incomplete",
+    );
 
-    const unavailable = queryCorpusEvidence({ outDir: out, statementClass: "open_question", root: "Unplugged" });
+    const unavailable = queryCorpusEvidence({
+      outDir: out,
+      statementClass: "open_question",
+      root: "Unplugged",
+    });
     expect(unavailable.outcome).toBe("unavailable");
     expect(unavailable.results).toEqual([]);
     expect(unavailable.match_count).toBeNull();
     expect(unavailable.diagnostics[0]?.code).toBe("query.root_not_observed");
     expect(runQuery(["--out", out, "--root", "Unplugged"]).status).toBe(3);
 
-    const observed = queryCorpusEvidence({ outDir: out, statementClass: "open_question", root: "Designs" });
+    const observed = queryCorpusEvidence({
+      outDir: out,
+      statementClass: "open_question",
+      root: "Designs",
+    });
     expect(observed.outcome).toBe("incomplete");
     expect(observed.results.length).toBe(partial.results.length);
   });
@@ -443,18 +589,33 @@ describe("E. incomplete corpus", () => {
     const out = path.join(tmp("l9-corpus-query-incremental-out-"), "observation");
     const cache = path.join(tmp("l9-corpus-query-incremental-cache-"), "cache");
     for (const pass of [1, 2]) {
-      const result = cp.spawnSync(process.execPath, [
-        SCAN_CLI, "--root", `${root}=Designs`, "--out", out, "--cache-dir", cache,
-        "--incremental", "--architecture-evidence",
-      ], { encoding: "utf8" });
+      const result = cp.spawnSync(
+        process.execPath,
+        [
+          SCAN_CLI,
+          "--root",
+          `${root}=Designs`,
+          "--out",
+          out,
+          "--cache-dir",
+          cache,
+          "--incremental",
+          "--architecture-evidence",
+        ],
+        { encoding: "utf8" },
+      );
       expect(result.status, `pass ${pass}: ${result.stderr}`).toBe(0);
     }
     const response = queryCorpusEvidence({ outDir: out, predicate: "work.status" });
     expect(response.outcome).toBe("ok");
-    expect(response.generation?.verification.verification_class).toBe("cached_unchanged_assumption");
+    expect(response.generation?.verification.verification_class).toBe(
+      "cached_unchanged_assumption",
+    );
     expect(response.generation?.verification.statement).not.toContain("read in full");
     expect(response.generation?.evidence_age_statement).toContain("never byte-verified");
-    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.verification_assumed");
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "query.verification_assumed",
+    );
   });
 
   it("reports a class query against a generation that never read statements as unsupported", () => {
@@ -465,7 +626,9 @@ describe("E. incomplete corpus", () => {
     const response = queryCorpusEvidence({ outDir: plain.out, statementClass: "constraint" });
     expect(response.outcome).toBe("unsupported");
     expect(response.results).toEqual([]);
-    expect(response.sources.find((source) => source.source === "architecture_evidence")?.status).toBe("not_run");
+    expect(
+      response.sources.find((source) => source.source === "architecture_evidence")?.status,
+    ).toBe("not_run");
     expect(runQuery(["--out", plain.out, "--class", "constraint"]).status).toBe(3);
     // Predicates are still answerable: the work signals and packets are there.
     const statuses = queryCorpusEvidence({ outDir: plain.out, predicate: "work.status" });
@@ -481,8 +644,12 @@ describe("F. compatibility", () => {
     const dir = generationDir(evidence.out);
     const before = treeHashes(dir);
     const currentBefore = fs.readFileSync(path.join(evidence.out, "CURRENT.json"), "utf8");
-    const one = renderEvidenceQueryResponse(queryCorpusEvidence({ outDir: evidence.out, text: "Gate" }));
-    const two = renderEvidenceQueryResponse(queryCorpusEvidence({ outDir: evidence.out, text: "Gate" }));
+    const one = renderEvidenceQueryResponse(
+      queryCorpusEvidence({ outDir: evidence.out, text: "Gate" }),
+    );
+    const two = renderEvidenceQueryResponse(
+      queryCorpusEvidence({ outDir: evidence.out, text: "Gate" }),
+    );
     expect(two).toBe(one);
     expect(treeHashes(dir)).toEqual(before);
     expect(fs.readFileSync(path.join(evidence.out, "CURRENT.json"), "utf8")).toBe(currentBefore);
@@ -493,23 +660,37 @@ describe("F. compatibility", () => {
   });
 
   it("truncates at the limit, says so, and counts the whole match set", () => {
-    const response = queryCorpusEvidence({ outDir: evidence.out, source: "repository_model_packet", limit: 2 });
+    const response = queryCorpusEvidence({
+      outDir: evidence.out,
+      source: "repository_model_packet",
+      limit: 2,
+    });
     expect(response.truncated).toBe(true);
     expect(response.returned_count).toBe(2);
     expect(response.match_count).toBeGreaterThan(2);
     expect(response.truncation_statement).toContain("narrow the query");
     // The returned records are the first of a total order over existing ids.
-    const full = queryCorpusEvidence({ outDir: evidence.out, source: "repository_model_packet", limit: 500 });
+    const full = queryCorpusEvidence({
+      outDir: evidence.out,
+      source: "repository_model_packet",
+      limit: 500,
+    });
     expect(full.results.slice(0, 2)).toEqual(response.results);
     const ids = full.results.map((record) => `${record.artifact_id}\u001f${record.record_id}`);
     expect([...ids].sort()).toEqual(ids);
   });
 
   it("refuses an unknown class, source, limit or flag rather than guessing", () => {
-    expect(queryCorpusEvidence({ outDir: evidence.out, statementClass: "wish" }).outcome).toBe("unsupported");
+    expect(queryCorpusEvidence({ outDir: evidence.out, statementClass: "wish" }).outcome).toBe(
+      "unsupported",
+    );
     expect(queryCorpusEvidence({ outDir: evidence.out, limit: 0 }).outcome).toBe("invalid");
     expect(queryCorpusEvidence({ outDir: evidence.out, limit: 501 }).outcome).toBe("invalid");
-    const unknown = cp.spawnSync(process.execPath, [QUERY_CLI, "--out", evidence.out, "--fuzzy", "x"], { encoding: "utf8" });
+    const unknown = cp.spawnSync(
+      process.execPath,
+      [QUERY_CLI, "--out", evidence.out, "--fuzzy", "x"],
+      { encoding: "utf8" },
+    );
     expect(unknown.status).toBe(2);
     expect(unknown.stderr).toContain("unknown option");
     const bare = cp.spawnSync(process.execPath, [QUERY_CLI], { encoding: "utf8" });
@@ -522,8 +703,16 @@ describe("F. compatibility", () => {
     expect(response.results.map((record) => [record.source, record.value])).toEqual([
       ["repository_model_packet", "Move the auth middleware into the chassis"],
     ]);
-    expect(response.results[0]?.document_declarations.statuses.map((ref) => ref.object)).toEqual(["blocked"]);
-    const kinds = queryCorpusEvidence({ outDir: evidence.out, kind: "proposal", predicate: "document.title" });
-    expect(kinds.results.map((record) => record.source_path)).toEqual(["plans/gate-routing-proposal.md"]);
+    expect(response.results[0]?.document_declarations.statuses.map((ref) => ref.object)).toEqual([
+      "blocked",
+    ]);
+    const kinds = queryCorpusEvidence({
+      outDir: evidence.out,
+      kind: "proposal",
+      predicate: "document.title",
+    });
+    expect(kinds.results.map((record) => record.source_path)).toEqual([
+      "plans/gate-routing-proposal.md",
+    ]);
   });
 });

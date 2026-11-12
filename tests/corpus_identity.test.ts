@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { FileCorpusCache } from "../src/corpus_cache";
 import {
   CORPUS_MANIFEST_SCHEMA,
   DEFAULT_CORPUS_ID,
@@ -23,13 +24,12 @@ import {
   rootDirectoryName,
 } from "../src/corpus_roots";
 import { runCorpusScan } from "../src/corpus_scan";
-import { FileCorpusCache } from "../src/corpus_cache";
+import { defaultExtractors } from "../src/extractors";
 import {
   bindPortableAssertions,
   interpretDocumentContent,
   toPortableAssertions,
 } from "../src/interpretation";
-import { defaultExtractors } from "../src/extractors";
 import { canonicalJson, emitRepositoryModelBundle } from "../src/repository_model";
 
 const scratch: string[] = [];
@@ -72,11 +72,15 @@ describe("the corpus manifest", () => {
   it("names the corpus and every root, and resolves paths against itself", () => {
     const dir = tmp();
     fs.mkdirSync(path.join(dir, "disks", "old"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "corpus.json"), JSON.stringify({
-      schema: CORPUS_MANIFEST_SCHEMA,
-      corpus_id: "personal-technical-archive",
-      roots: [{ root_id: "old-ssd", path: "disks/old", name: "Old SSD" }],
-    }), "utf8");
+    fs.writeFileSync(
+      path.join(dir, "corpus.json"),
+      JSON.stringify({
+        schema: CORPUS_MANIFEST_SCHEMA,
+        corpus_id: "personal-technical-archive",
+        roots: [{ root_id: "old-ssd", path: "disks/old", name: "Old SSD" }],
+      }),
+      "utf8",
+    );
 
     const manifest = readCorpusManifest(path.join(dir, "corpus.json"));
     expect(manifest.corpus_id).toBe("personal-technical-archive");
@@ -93,19 +97,38 @@ describe("the corpus manifest", () => {
       fs.writeFileSync(file, JSON.stringify(body), "utf8");
       return file;
     };
-    expect(() => readCorpusManifest(write({
-      schema: CORPUS_MANIFEST_SCHEMA, roots: [{ root_id: "a", path: "." }],
-    }))).toThrow(/no 'corpus_id'/);
-    expect(() => readCorpusManifest(write({
-      schema: CORPUS_MANIFEST_SCHEMA, corpus_id: "c", roots: [{ path: "." }],
-    }))).toThrow(/has no 'root_id'/);
-    expect(() => readCorpusManifest(write({
-      schema: CORPUS_MANIFEST_SCHEMA,
-      corpus_id: "c",
-      roots: [{ root_id: "a", path: "." }, { root_id: "a", path: ".." }],
-    }))).toThrow(/declares root_id 'a' more than once/);
-    expect(() => readCorpusManifest(write({ schema: "l9.something-else/v1", roots: [] })))
-      .toThrow(/expected 'l9\.local-corpus\/v1'/);
+    expect(() =>
+      readCorpusManifest(
+        write({
+          schema: CORPUS_MANIFEST_SCHEMA,
+          roots: [{ root_id: "a", path: "." }],
+        }),
+      ),
+    ).toThrow(/no 'corpus_id'/);
+    expect(() =>
+      readCorpusManifest(
+        write({
+          schema: CORPUS_MANIFEST_SCHEMA,
+          corpus_id: "c",
+          roots: [{ path: "." }],
+        }),
+      ),
+    ).toThrow(/has no 'root_id'/);
+    expect(() =>
+      readCorpusManifest(
+        write({
+          schema: CORPUS_MANIFEST_SCHEMA,
+          corpus_id: "c",
+          roots: [
+            { root_id: "a", path: "." },
+            { root_id: "a", path: ".." },
+          ],
+        }),
+      ),
+    ).toThrow(/declares root_id 'a' more than once/);
+    expect(() => readCorpusManifest(write({ schema: "l9.something-else/v1", roots: [] }))).toThrow(
+      /expected 'l9\.local-corpus\/v1'/,
+    );
   });
 
   it("still reads a roots list that predates corpus naming", () => {
@@ -187,7 +210,10 @@ describe("a cached interpretation", () => {
 
   it("does not let one root's identity leak into another root's packet", async () => {
     const { rootA, rootB } = twinRoots();
-    const roots = [{ path: rootA, name: "rootA" }, { path: rootB, name: "rootB" }];
+    const roots = [
+      { path: rootA, name: "rootA" },
+      { path: rootB, name: "rootB" },
+    ];
     const cold = await runCorpusScan({ roots, producerVersion: "test" });
 
     const cache = new FileCorpusCache({
@@ -212,9 +238,11 @@ describe("a cached interpretation", () => {
     // And the two roots really do model the twin document as two artifacts.
     const subjectsOf = (key: string) => {
       const packet = warm.rootPackets.find((entry) => entry.root_key === key)?.packet;
-      return new Set((packet?.payload.assertions ?? [])
-        .filter((assertion) => assertion.source_path === "proj-alpha/README.md")
-        .map((assertion) => assertion.subject_id));
+      return new Set(
+        (packet?.payload.assertions ?? [])
+          .filter((assertion) => assertion.source_path === "proj-alpha/README.md")
+          .map((assertion) => assertion.subject_id),
+      );
     };
     const a = subjectsOf("rootA");
     const b = subjectsOf("rootB");
@@ -228,7 +256,10 @@ describe("a corpus snapshot", () => {
   it("gives every root its own packet, bundle reference and status", async () => {
     const { rootA, rootB } = twinRoots();
     const result = await runCorpusScan({
-      roots: [{ path: rootA, name: "rootA" }, { path: rootB, name: "rootB" }],
+      roots: [
+        { path: rootA, name: "rootA" },
+        { path: rootB, name: "rootB" },
+      ],
       producerVersion: "test",
       corpusId: "personal-technical-archive",
     });
@@ -255,23 +286,32 @@ describe("a corpus snapshot", () => {
 
   it("names the corpus without letting the name reach any identity", async () => {
     const { rootA, rootB } = twinRoots();
-    const roots = [{ path: rootA, name: "rootA" }, { path: rootB, name: "rootB" }];
+    const roots = [
+      { path: rootA, name: "rootA" },
+      { path: rootB, name: "rootB" },
+    ];
     const first = await runCorpusScan({ roots, producerVersion: "test", corpusId: "archive-one" });
     const second = await runCorpusScan({ roots, producerVersion: "test", corpusId: "archive-two" });
 
     expect(first.snapshot.corpus_id).not.toBe(second.snapshot.corpus_id);
-    expect(first.snapshot.corpus_source_snapshot_id)
-      .toBe(second.snapshot.corpus_source_snapshot_id);
-    expect(first.snapshot.analysis.corpus_analysis_id)
-      .toBe(second.snapshot.analysis.corpus_analysis_id);
+    expect(first.snapshot.corpus_source_snapshot_id).toBe(
+      second.snapshot.corpus_source_snapshot_id,
+    );
+    expect(first.snapshot.analysis.corpus_analysis_id).toBe(
+      second.snapshot.analysis.corpus_analysis_id,
+    );
     // The same root named in two corpora keeps its own packet, too.
-    expect(first.rootPackets.map((p) => p.packet.packet_id))
-      .toEqual(second.rootPackets.map((p) => p.packet.packet_id));
+    expect(first.rootPackets.map((p) => p.packet.packet_id)).toEqual(
+      second.rootPackets.map((p) => p.packet.packet_id),
+    );
   });
 
   it("moves the analysis identity, and only that, when a threshold changes", async () => {
     const { rootA, rootB } = twinRoots();
-    const roots = [{ path: rootA, name: "rootA" }, { path: rootB, name: "rootB" }];
+    const roots = [
+      { path: rootA, name: "rootA" },
+      { path: rootB, name: "rootB" },
+    ];
     const base = await runCorpusScan({ roots, producerVersion: "test" });
     const retuned = await runCorpusScan({
       roots,
@@ -279,10 +319,12 @@ describe("a corpus snapshot", () => {
       nearDuplicates: { threshold: 0.5 },
     });
 
-    expect(retuned.snapshot.corpus_source_snapshot_id)
-      .toBe(base.snapshot.corpus_source_snapshot_id);
-    expect(retuned.snapshot.analysis.corpus_analysis_id)
-      .not.toBe(base.snapshot.analysis.corpus_analysis_id);
+    expect(retuned.snapshot.corpus_source_snapshot_id).toBe(
+      base.snapshot.corpus_source_snapshot_id,
+    );
+    expect(retuned.snapshot.analysis.corpus_analysis_id).not.toBe(
+      base.snapshot.analysis.corpus_analysis_id,
+    );
   });
 });
 
@@ -298,9 +340,11 @@ describe("a root inside a corpus", () => {
     // corpus bundle too — which is a stronger claim than a second fixture, and it
     // is the property the whole per-root design rests on: a corpus is an analysis
     // across roots, not a different way of modelling one.
-    const golden = JSON.parse(
-      fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"),
-    ) as { packet_id: string; semantic_hash: string; producer: { version: string } };
+    const golden = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8")) as {
+      packet_id: string;
+      semantic_hash: string;
+      producer: { version: string };
+    };
 
     const result = await runCorpusScan({
       roots: [{ path: SAMPLE, name: "sample-local-source" }],
@@ -319,8 +363,9 @@ describe("a root inside a corpus", () => {
     const emitted = path.join(tmp(), "bundle");
     emitRepositoryModelBundle(packet!, { outDir: emitted });
     for (const relative of ["packet.json", "manifest.json", "receipts/validation-receipt.json"]) {
-      expect(fs.readFileSync(path.join(emitted, relative), "utf8"))
-        .toBe(fs.readFileSync(path.join(GOLDEN, relative), "utf8"));
+      expect(fs.readFileSync(path.join(emitted, relative), "utf8")).toBe(
+        fs.readFileSync(path.join(GOLDEN, relative), "utf8"),
+      );
     }
 
     // And the snapshot cites exactly that packet, so the corpus points at the
@@ -335,16 +380,21 @@ describe("a root inside a corpus", () => {
       producerVersion: "test",
     });
     const beside = await runCorpusScan({
-      roots: [{ path: SAMPLE, name: "sample-local-source" }, { path: rootA, name: "rootA" }],
+      roots: [
+        { path: SAMPLE, name: "sample-local-source" },
+        { path: rootA, name: "rootA" },
+      ],
       producerVersion: "test",
     });
 
     const find = (result: Awaited<ReturnType<typeof runCorpusScan>>) =>
       result.rootPackets.find((entry) => entry.root_key === "sample-local-source")?.packet;
-    expect(canonicalJson(find(beside) as unknown as Record<string, unknown>))
-      .toBe(canonicalJson(find(alone) as unknown as Record<string, unknown>));
+    expect(canonicalJson(find(beside) as unknown as Record<string, unknown>)).toBe(
+      canonicalJson(find(alone) as unknown as Record<string, unknown>),
+    );
     // Adding a root changes the corpus identity and leaves the roots alone.
-    expect(beside.snapshot.corpus_source_snapshot_id)
-      .not.toBe(alone.snapshot.corpus_source_snapshot_id);
+    expect(beside.snapshot.corpus_source_snapshot_id).not.toBe(
+      alone.snapshot.corpus_source_snapshot_id,
+    );
   });
 });

@@ -10,27 +10,36 @@
 // RC-041: a Unix-host entry whose mode carries permission bits but no S_IFMT type
 // bits (CPython `zipfile.writestr` writes 0o600) is classified by its name, as
 // Info-ZIP and Python themselves extract it.
-import * as fs from "node:fs";
+
 import { createHash } from "node:crypto";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { ARCHIVE_READER_VERSION } from "../src/archive_execution";
-import { preflightArchive } from "../src/archive_preflight";
 import type { ArchivePreflightResult } from "../src/archive_preflight";
+import { preflightArchive } from "../src/archive_preflight";
 import { expandArchivesUnderRoot, extractDirFor, extractZip } from "../src/archives";
 import { inventoryTree } from "../src/inventory";
 import { upsertArchiveRootMeta } from "../src/inventory_archive_member";
-import { localArchivePolicyFingerprint, resolveLocalArchivePolicy } from "../src/local_archive_policy";
-import { acquireLocalSource } from "../src/local_source";
-import type { ArchiveManifestKey, ArchiveManifestStore } from "../src/local_source";
 import {
-  ZipBudgetExceededError,
-  ZipFormatError,
+  localArchivePolicyFingerprint,
+  resolveLocalArchivePolicy,
+} from "../src/local_archive_policy";
+import type { ArchiveManifestKey, ArchiveManifestStore } from "../src/local_source";
+import { acquireLocalSource } from "../src/local_source";
+import {
   readZipCentralDirectory,
   streamZipMember,
+  ZipBudgetExceededError,
+  ZipFormatError,
 } from "../src/zip_reader";
-import { UNIX_SYMLINK, treeSnapshot, writeRawZip, type ZipMemberSpec } from "./helpers/zip_fixtures";
+import {
+  treeSnapshot,
+  UNIX_SYMLINK,
+  writeRawZip,
+  type ZipMemberSpec,
+} from "./helpers/zip_fixtures";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-admission-"));
@@ -67,13 +76,15 @@ function thrown(fn: () => unknown): Error {
 const TWO_POW_40 = 2 ** 40;
 
 /** Deflate member whose Zip64-declared compressed size is 2^40 bytes. */
-const HOSTILE_EXTENT: ZipMemberSpec[] = [{
-  name: "payload.txt",
-  content: "hello hostile\n",
-  zip64: true,
-  declaredCompressedSize: TWO_POW_40,
-  declaredUncompressedSize: 1,
-}];
+const HOSTILE_EXTENT: ZipMemberSpec[] = [
+  {
+    name: "payload.txt",
+    content: "hello hostile\n",
+    zip64: true,
+    declaredCompressedSize: TWO_POW_40,
+    declaredUncompressedSize: 1,
+  },
+];
 
 const GOOD: ZipMemberSpec[] = [{ name: "good.md", content: "# Good\n" }];
 
@@ -82,14 +93,21 @@ function writeOverstatedExtent(archivePath: string): void {
   const content = "the last member's data ends exactly at the central directory\n";
   writeRawZip(archivePath, [
     { name: "first.txt", content: "first\n" },
-    { name: "last.txt", content, stored: true, declaredCompressedSize: Buffer.byteLength(content) + 1 },
+    {
+      name: "last.txt",
+      content,
+      stored: true,
+      declaredCompressedSize: Buffer.byteLength(content) + 1,
+    },
   ]);
 }
 
 /** A bomb that declares 1 byte and inflates to 8 MiB. */
 const EIGHT_MIB = 8 * 1024 * 1024;
 const LYING_BOMB_CONTENT = Buffer.alloc(EIGHT_MIB, 0x41);
-const LYING_BOMB: ZipMemberSpec[] = [{ name: "bomb.bin", content: LYING_BOMB_CONTENT, declaredUncompressedSize: 1 }];
+const LYING_BOMB: ZipMemberSpec[] = [
+  { name: "bomb.bin", content: LYING_BOMB_CONTENT, declaredUncompressedSize: 1 },
+];
 const GENEROUS = {
   maxCompressionRatio: 10,
   maxSingleMemberUncompressedBytes: 64 * 1024 * 1024,
@@ -109,8 +127,9 @@ describe("RC-038 — declared data extents are bounded before any allocation", (
     expect(hostile?.heldReason).toContain("archive.format_unreadable");
     expect(good?.heldReason ?? null).toBeNull();
     expect(result.extractedRoots).toEqual([extractDirFor(path.join(root, "b_good.zip"))]);
-    expect(fs.readFileSync(path.join(extractDirFor(path.join(root, "b_good.zip")), "good.md"), "utf8"))
-      .toBe("# Good\n");
+    expect(
+      fs.readFileSync(path.join(extractDirFor(path.join(root, "b_good.zip")), "good.md"), "utf8"),
+    ).toBe("# Good\n");
     expect(fs.existsSync(extractDirFor(path.join(root, "a_hostile.zip")))).toBe(false);
     expect(allNames(root).filter((name) => name.includes(".candidate-"))).toEqual([]);
   });
@@ -124,12 +143,16 @@ describe("RC-038 — declared data extents are bounded before any allocation", (
 
     const observation = acquireLocalSource({ path: root, scratchParent });
     try {
-      const hostile = observation.archives.find((archive) => archive.sourcePath === "a_hostile.zip");
+      const hostile = observation.archives.find(
+        (archive) => archive.sourcePath === "a_hostile.zip",
+      );
       const good = observation.archives.find((archive) => archive.sourcePath === "b_good.zip");
       expect(hostile?.expanded).toBe(false);
       expect(hostile?.holds.map((hold) => hold.code)).toEqual(["archive.format_unreadable"]);
       expect(good?.expanded).toBe(true);
-      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual(["b_good.zip!/good.md"]);
+      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual([
+        "b_good.zip!/good.md",
+      ]);
     } finally {
       observation.dispose();
     }
@@ -141,12 +164,17 @@ describe("RC-038 — declared data extents are bounded before any allocation", (
     const root = tmp();
     const archivePath = path.join(root, "honest.zip");
     const content = "the last member's data ends exactly at the central directory\n";
-    writeRawZip(archivePath, [{ name: "first.txt", content: "first\n" }, { name: "last.txt", content, stored: true }]);
+    writeRawZip(archivePath, [
+      { name: "first.txt", content: "first\n" },
+      { name: "last.txt", content, stored: true },
+    ]);
     const bytes = fs.readFileSync(archivePath);
     const centralOffset = bytes.readUInt32LE(bytes.length - 22 + 16);
     const directory = readZipCentralDirectory(archivePath);
     const last = directory.entries[1];
-    expect(last.localHeaderOffset + 30 + "last.txt".length + last.compressedSize).toBe(centralOffset);
+    expect(last.localHeaderOffset + 30 + "last.txt".length + last.compressedSize).toBe(
+      centralOffset,
+    );
 
     const verdict = preflightArchive({
       directory,
@@ -171,7 +199,9 @@ describe("RC-038 — declared data extents are bounded before any allocation", (
     const observation = acquireLocalSource({ path: archivePath });
     try {
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual(["archive.format_unreadable"]);
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual([
+        "archive.format_unreadable",
+      ]);
       expect(observation.virtualArtifacts).toEqual([]);
     } finally {
       observation.dispose();
@@ -196,23 +226,37 @@ describe("RC-038 — declared data extents are bounded before any allocation", (
     const keyOf = (key: ArchiveManifestKey): string =>
       `${key.archiveContentHash}|${key.readerVersion}|${key.policyFingerprint}`;
     const store = new Map<string, ArchivePreflightResult>();
-    store.set(keyOf({
-      archiveContentHash: `sha256:${sha256(fs.readFileSync(archivePath))}`,
-      readerVersion: "1.1.0",
-      policyFingerprint: localArchivePolicyFingerprint(resolveLocalArchivePolicy()),
-    }), staleAccepted);
+    store.set(
+      keyOf({
+        archiveContentHash: `sha256:${sha256(fs.readFileSync(archivePath))}`,
+        readerVersion: "1.1.0",
+        policyFingerprint: localArchivePolicyFingerprint(resolveLocalArchivePolicy()),
+      }),
+      staleAccepted,
+    );
     const seen: string[] = [];
     const manifests: ArchiveManifestStore = {
-      get: (key) => { seen.push(key.readerVersion); return store.get(keyOf(key)); },
-      put: (key, value) => { store.set(keyOf(key), value); },
+      get: (key) => {
+        seen.push(key.readerVersion);
+        return store.get(keyOf(key));
+      },
+      put: (key, value) => {
+        store.set(keyOf(key), value);
+      },
     };
 
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp(), archiveManifests: manifests });
+    const observation = acquireLocalSource({
+      path: root,
+      scratchParent: tmp(),
+      archiveManifests: manifests,
+    });
     try {
       expect(seen).toEqual(["1.2.0"]);
       expect(ARCHIVE_READER_VERSION).toBe("1.2.0");
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual(["archive.format_unreadable"]);
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual([
+        "archive.format_unreadable",
+      ]);
     } finally {
       observation.dispose();
     }
@@ -225,8 +269,11 @@ describe("RC-038 — declared data extents are bounded before any allocation", (
     const before = fs.readFileSync(archivePath);
     const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false });
     const record = result.records.find((row) => row.file_name === "a_hostile.zip");
-    expect(record?.unknowns.some((unknown) => unknown.startsWith("archive_rewrite_held:archive.format_unreadable")))
-      .toBe(true);
+    expect(
+      record?.unknowns.some((unknown) =>
+        unknown.startsWith("archive_rewrite_held:archive.format_unreadable"),
+      ),
+    ).toBe(true);
     expect(fs.readFileSync(archivePath)).toEqual(before);
   });
 });
@@ -240,12 +287,16 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
     expect(entry.uncompressedSize).toBe(1);
 
     let produced = 0;
-    const error = thrown(() => streamZipMember(
-      archivePath,
-      entry,
-      { maxUncompressedBytes: GENEROUS.maxSingleMemberUncompressedBytes },
-      (chunk) => { produced += chunk.length; },
-    ));
+    const error = thrown(() =>
+      streamZipMember(
+        archivePath,
+        entry,
+        { maxUncompressedBytes: GENEROUS.maxSingleMemberUncompressedBytes },
+        (chunk) => {
+          produced += chunk.length;
+        },
+      ),
+    );
     expect(error).toBeInstanceOf(ZipFormatError);
     expect(error.name).toBe("ZipSizeMismatchError");
     expect(produced).toBeLessThanOrEqual(1);
@@ -253,10 +304,16 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
     // local-files: extractZip refuses with the integrity error and leaves no
     // extraction directory or candidate behind.
     const extractDir = extractDirFor(archivePath);
-    expect(() => extractZip(archivePath, extractDir, undefined, { policy: GENEROUS })).toThrow(ZipFormatError);
+    expect(() => extractZip(archivePath, extractDir, undefined, { policy: GENEROUS })).toThrow(
+      ZipFormatError,
+    );
     expect(fs.existsSync(extractDir)).toBe(false);
     expect(allNames(root)).toEqual(["lie.zip"]);
-    const expanded = expandArchivesUnderRoot(root, { dryRun: false, verbose: false, archivePolicy: GENEROUS });
+    const expanded = expandArchivesUnderRoot(root, {
+      dryRun: false,
+      verbose: false,
+      archivePolicy: GENEROUS,
+    });
     expect(expanded.archives[0].heldReason).toContain("archive.integrity_failed");
     expect(allNames(root)).toEqual(["lie.zip"]);
 
@@ -265,7 +322,9 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
     const observation = acquireLocalSource({ path: root, scratchParent, archivePolicy: GENEROUS });
     try {
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual(["archive.member_integrity_failed"]);
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual([
+        "archive.member_integrity_failed",
+      ]);
       expect(observation.virtualArtifacts).toEqual([]);
       const scratchRoots = fs.readdirSync(scratchParent);
       const staged = scratchRoots.flatMap((name) => {
@@ -281,11 +340,15 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
 
   test("REG-WU-032-RC-038-038-f: an overstated deflate size (1000 declared, 11 produced) is an integrity hold", () => {
     const root = tmp();
-    writeRawZip(path.join(root, "over.zip"), [{ name: "short.txt", content: "eleven byte", declaredUncompressedSize: 1000 }]);
+    writeRawZip(path.join(root, "over.zip"), [
+      { name: "short.txt", content: "eleven byte", declaredUncompressedSize: 1000 },
+    ]);
     const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
     try {
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual(["archive.member_integrity_failed"]);
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual([
+        "archive.member_integrity_failed",
+      ]);
       expect(observation.virtualArtifacts).toEqual([]);
     } finally {
       observation.dispose();
@@ -300,10 +363,16 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
     writeRawZip(path.join(root, "stored.zip"), [
       { name: "big.txt", content: "s".repeat(4096), stored: true, declaredUncompressedSize: 1 },
     ]);
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp(), archivePolicy: { maxCompressionRatio: 100000 } });
+    const observation = acquireLocalSource({
+      path: root,
+      scratchParent: tmp(),
+      archivePolicy: { maxCompressionRatio: 100000 },
+    });
     try {
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual(["archive.member_integrity_failed"]);
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual([
+        "archive.member_integrity_failed",
+      ]);
       expect(observation.virtualArtifacts).toEqual([]);
     } finally {
       observation.dispose();
@@ -324,8 +393,14 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
     const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
     try {
       expect(observation.archives[0].expanded).toBe(true);
-      const byName = new Map(observation.virtualArtifacts.map((member) => [member.memberPath, member]));
-      for (const [name, body] of [["deflated.md", deflated], ["stored.txt", stored], ["empty.txt", ""]]) {
+      const byName = new Map(
+        observation.virtualArtifacts.map((member) => [member.memberPath, member]),
+      );
+      for (const [name, body] of [
+        ["deflated.md", deflated],
+        ["stored.txt", stored],
+        ["empty.txt", ""],
+      ]) {
         expect(byName.get(name)?.sizeBytes).toBe(Buffer.byteLength(body));
         expect(byName.get(name)?.contentHash).toBe(`sha256:${sha256(body)}`);
       }
@@ -347,8 +422,11 @@ describe("RC-038 — produced bytes must equal the declared uncompressed size", 
     writeRawZip(archivePath, [{ name: "big.txt", content: "A".repeat(512 * 1024) }]);
     const entry = readZipCentralDirectory(archivePath).entries[0];
     const chunks: Buffer[] = [];
-    expect(() => streamZipMember(archivePath, entry, { maxUncompressedBytes: 4096 }, (chunk) => { chunks.push(chunk); }))
-      .toThrow(ZipBudgetExceededError);
+    expect(() =>
+      streamZipMember(archivePath, entry, { maxUncompressedBytes: 4096 }, (chunk) => {
+        chunks.push(chunk);
+      }),
+    ).toThrow(ZipBudgetExceededError);
     expect(chunks).toEqual([]);
   });
 });
@@ -368,7 +446,11 @@ describe("RC-041 — Unix modes without file-type bits classify by name", () => 
   }
 
   test("REG-WU-032-RC-041-041-a: a permission-only file mode is a file and keeps its recorded mode", () => {
-    const { entry, verdict } = entryFor({ name: "report.txt", content: "report\n", unixMode: 0o600 });
+    const { entry, verdict } = entryFor({
+      name: "report.txt",
+      content: "report\n",
+      unixMode: 0o600,
+    });
     expect(entry.kind).toBe("file");
     expect(entry.unixMode).toBe(0o600);
     expect(verdict.accepted).toBe(true);
@@ -381,7 +463,12 @@ describe("RC-041 — Unix modes without file-type bits classify by name", () => 
   });
 
   test("REG-WU-032-RC-041-041-c: a symlink mode is still a symlink and still held", () => {
-    const { entry, verdict } = entryFor({ name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true });
+    const { entry, verdict } = entryFor({
+      name: "link",
+      content: "/etc/passwd",
+      unixMode: UNIX_SYMLINK,
+      stored: true,
+    });
     expect(entry.kind).toBe("symlink");
     expect(verdict.holds.map((hold) => hold.code)).toEqual(["archive.entry_symlink"]);
   });
@@ -393,30 +480,46 @@ describe("RC-041 — Unix modes without file-type bits classify by name", () => 
   });
 
   test("REG-WU-032-RC-041-041-e: a CPython writestr-style archive is expanded, extracted and rewritten", () => {
-    const specs: ZipMemberSpec[] = [{ name: "report.txt", content: "made by zipfile.writestr\n", unixMode: 0o600 }];
+    const specs: ZipMemberSpec[] = [
+      { name: "report.txt", content: "made by zipfile.writestr\n", unixMode: 0o600 },
+    ];
     const sourceRoot = tmp();
     writeRawZip(path.join(sourceRoot, "py.zip"), specs);
     const observation = acquireLocalSource({ path: sourceRoot, scratchParent: tmp() });
     try {
       expect(observation.archives[0].expanded).toBe(true);
-      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual(["py.zip!/report.txt"]);
+      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual([
+        "py.zip!/report.txt",
+      ]);
     } finally {
       observation.dispose();
     }
 
     const expanded = expandArchivesUnderRoot(sourceRoot, { dryRun: false, verbose: false });
     expect(expanded.archives[0].heldReason ?? null).toBeNull();
-    expect(fs.readFileSync(path.join(extractDirFor(path.join(sourceRoot, "py.zip")), "report.txt"), "utf8"))
-      .toBe("made by zipfile.writestr\n");
+    expect(
+      fs.readFileSync(
+        path.join(extractDirFor(path.join(sourceRoot, "py.zip")), "report.txt"),
+        "utf8",
+      ),
+    ).toBe("made by zipfile.writestr\n");
 
     const rewriteRoot = tmp();
     const rewritePath = path.join(rewriteRoot, "py.zip");
     writeRawZip(rewritePath, specs);
-    expect(upsertArchiveRootMeta(rewritePath, "schema: l9.meta/v3\ntitle: injected\n")).toEqual({ rewritten: true });
+    expect(upsertArchiveRootMeta(rewritePath, "schema: l9.meta/v3\ntitle: injected\n")).toEqual({
+      rewritten: true,
+    });
   });
 
   test("REG-WU-032-RC-041-041-f: a Unix entry with no mode at all keeps the name rule", () => {
-    expect(entryFor({ name: "plain.txt", content: "x", unixMode: 0 }).entry).toMatchObject({ kind: "file", unixMode: null });
-    expect(entryFor({ name: "folder/", unixMode: 0 }).entry).toMatchObject({ kind: "directory", unixMode: null });
+    expect(entryFor({ name: "plain.txt", content: "x", unixMode: 0 }).entry).toMatchObject({
+      kind: "file",
+      unixMode: null,
+    });
+    expect(entryFor({ name: "folder/", unixMode: 0 }).entry).toMatchObject({
+      kind: "directory",
+      unixMode: null,
+    });
   });
 });

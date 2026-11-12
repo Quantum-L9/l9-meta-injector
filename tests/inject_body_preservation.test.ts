@@ -1,19 +1,24 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { injectFile } from "../src/inject";
-import { verify } from "../src/verify";
-import { stripExistingFrontMatter } from "../src/extract";
-import { buildMeta } from "../src/normalize_meta";
-import { extract, splitContent } from "../src/extract";
 import { classify } from "../src/classify";
+import { extract, splitContent, stripExistingFrontMatter } from "../src/extract";
+import { injectFile } from "../src/inject";
 import { NamespaceConfig } from "../src/namespace";
+import { buildMeta } from "../src/normalize_meta";
+import { verify } from "../src/verify";
 
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-bodyp-")); }
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "l9-bodyp-"));
+}
 
 const NS: NamespaceConfig = {
-  namespace: "l9", authority: "l9.doctrine.platform", nearDupThreshold: 0.9,
-  hashPrefixLength: 16, outputDir: ".out", indexDir: ".",
+  namespace: "l9",
+  authority: "l9.doctrine.platform",
+  nearDupThreshold: 0.9,
+  hashPrefixLength: 16,
+  outputDir: ".out",
+  indexDir: ".",
 };
 
 const BODY = `## Role
@@ -24,7 +29,15 @@ Senior auditor agent.
 `;
 
 function metaFor(fp: string, body: string) {
-  return buildMeta(fp, body, extract(body), classify(fp, body, "none"), NS, "l9.doctrine.platform", "2026-01-01T00:00:00.000Z");
+  return buildMeta(
+    fp,
+    body,
+    extract(body),
+    classify(fp, body, "none"),
+    NS,
+    "l9.doctrine.platform",
+    "2026-01-01T00:00:00.000Z",
+  );
 }
 
 test("first injection of a frontmatter file preserves the body (regression: bodyPreserved=false)", () => {
@@ -32,7 +45,12 @@ test("first injection of a frontmatter file preserves the body (regression: body
   const fp = path.join(root, "skills-lint.md");
   fs.writeFileSync(fp, BODY);
 
-  const rec = injectFile(fp, metaFor(fp, splitContent(BODY).body), { dryRun: false, outDir: tmp(), verbose: false, writeInjectLog: false });
+  const rec = injectFile(fp, metaFor(fp, splitContent(BODY).body), {
+    dryRun: false,
+    outDir: tmp(),
+    verbose: false,
+    writeInjectLog: false,
+  });
   expect(rec.bodyPreserved).toBe(true);
 
   const v = verify(rec.sourcePath, rec.originalBodyHash, rec.meta);

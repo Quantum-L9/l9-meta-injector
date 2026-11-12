@@ -1,5 +1,5 @@
-import { NormalizedMeta, InjectionRecord } from "./schema";
 import { MetricsCollector } from "./metrics";
+import { InjectionRecord, NormalizedMeta } from "./schema";
 export interface InjectOptions {
     dryRun: boolean;
     outDir: string;

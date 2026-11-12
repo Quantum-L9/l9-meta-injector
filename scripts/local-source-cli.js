@@ -141,9 +141,8 @@ function fail(message, code = 1) {
 function parseArgs(argv) {
   // Corpus mode names its roots with --root, so it has no positional target; the
   // single-source mode still requires one.
-  const corpusMode = argv.includes("--root")
-    || argv.includes("--root-manifest")
-    || argv.includes("--manifest");
+  const corpusMode =
+    argv.includes("--root") || argv.includes("--root-manifest") || argv.includes("--manifest");
   if (argv.length === 0 || (!corpusMode && argv[0].startsWith("-"))) {
     console.error(USAGE);
     process.exit(2);
@@ -155,7 +154,8 @@ function parseArgs(argv) {
   };
   const optAll = (name) => {
     const out = [];
-    for (let i = 0; i < argv.length; i++) if (argv[i] === name && argv[i + 1]) out.push(argv[i + 1]);
+    for (let i = 0; i < argv.length; i++)
+      if (argv[i] === name && argv[i + 1]) out.push(argv[i + 1]);
     return out;
   };
   return { argv, flag, opt, optAll, corpusMode, target: corpusMode ? null : argv[0] };
@@ -175,8 +175,15 @@ function generatedAtOpt(cli) {
   if (raw === null || raw.startsWith("--")) fail("--generated-at needs a value", 2);
   const shape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
   const time = Date.parse(raw);
-  if (!shape.test(raw) || Number.isNaN(time) || new Date(time).toISOString().slice(0, 19) !== raw.slice(0, 19)) {
-    fail(`--generated-at must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ with up to 3 fractional-second digits, got '${raw}'`, 2);
+  if (
+    !shape.test(raw) ||
+    Number.isNaN(time) ||
+    new Date(time).toISOString().slice(0, 19) !== raw.slice(0, 19)
+  ) {
+    fail(
+      `--generated-at must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ with up to 3 fractional-second digits, got '${raw}'`,
+      2,
+    );
   }
   return new Date(time).toISOString();
 }
@@ -197,7 +204,8 @@ function numericOpt(cli, name) {
   const raw = cli.opt(name, null);
   if (raw === null) return undefined;
   const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 0) fail(`${name} must be a non-negative integer, got '${raw}'`, 2);
+  if (!Number.isSafeInteger(value) || value < 0)
+    fail(`${name} must be a non-negative integer, got '${raw}'`, 2);
   return value;
 }
 
@@ -281,12 +289,12 @@ function collectRoots(cli, roots) {
  */
 const RETIRED_BUDGET_FLAGS = {
   "--max-hash-workers":
-    "acquisition hashes a root with one synchronous streaming reader, which is what makes its "
-    + "did-this-tree-move check meaningful; the flag was recorded and never exercised",
+    "acquisition hashes a root with one synchronous streaming reader, which is what makes its " +
+    "did-this-tree-move check meaningful; the flag was recorded and never exercised",
   "--max-parallel-hashers": "see --max-hash-workers",
   "--max-analysis-workers":
-    "candidate generation is a single pass over evidence already in memory; the flag was "
-    + "recorded and never exercised",
+    "candidate generation is a single pass over evidence already in memory; the flag was " +
+    "recorded and never exercised",
 };
 
 /** Resource budgets, defaulted by the engine and overridable one at a time. */
@@ -306,7 +314,10 @@ function collectBudgets(cli) {
   // existing invocation does not break; the newer name wins when both are given.
   const map = {
     max_parallel_decoders: ["--max-decoder-workers", "--max-parallel-decoders"],
-    max_parallel_embedding_requests: ["--max-embedding-workers", "--max-parallel-embedding-requests"],
+    max_parallel_embedding_requests: [
+      "--max-embedding-workers",
+      "--max-parallel-embedding-requests",
+    ],
     max_memory_bytes: ["--max-memory-bytes"],
   };
   for (const [key, flagNames] of Object.entries(map)) {
@@ -343,53 +354,65 @@ function reportCorpusRun(context) {
     console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
   }
   console.log(`  files scanned    ${result.scanned.files} (${result.scanned.bytes} byte(s))`);
-  console.log(`  archives         ${coverage.corpus.archive_count}, ${coverage.corpus.archive_member_count} member(s)`);
-  console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
-  console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
+  console.log(
+    `  archives         ${coverage.corpus.archive_count}, ${coverage.corpus.archive_member_count} member(s)`,
+  );
+  console.log(
+    `  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`,
+  );
+  console.log(
+    `  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`,
+  );
   // A pass that did not run has no completeness figure to print (ADR-068).
   if (coverage.interpretation_enabled === true) {
-    console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
+    console.log(
+      `  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`,
+    );
   } else {
     console.log("  interpreted      disabled (--no-interpret); not run");
   }
-  console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
+  console.log(
+    `  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`,
+  );
   // The two states are reported differently on purpose. "Not enabled" is a claim
   // that nothing left the machine; an enabled run has to say what it sent, to
   // where, and how much of it came back, because that is what makes a remote
   // pass auditable after the fact.
   const embeddings = coverage.embeddings;
   if (embeddings.enabled !== true) {
-    console.log("  embeddings       not enabled; no model was called and no network request was made");
+    console.log(
+      "  embeddings       not enabled; no model was called and no network request was made",
+    );
   } else {
     const report = result.semantic?.embeddingReport;
     console.log(
-      `  embeddings       ${embeddings.embedded_count}/${embeddings.eligible_count} embedded`
-      + ` (${embeddings.cache_hit_count} from cache),`
-      + ` ${report?.remote === true ? "remote" : "local"} ${report?.provider ?? "?"}`
-      + ` model ${report?.model_id ?? "?"}`,
+      `  embeddings       ${embeddings.embedded_count}/${embeddings.eligible_count} embedded` +
+        ` (${embeddings.cache_hit_count} from cache),` +
+        ` ${report?.remote === true ? "remote" : "local"} ${report?.provider ?? "?"}` +
+        ` model ${report?.model_id ?? "?"}`,
     );
     console.log(
-      `  embeddings sent  ${report?.artifact_count_sent ?? 0} document(s),`
-      + ` ${report?.chunk_count_sent ?? 0} bounded chunk(s);`
-      + ` ${report?.secret_candidates_skipped ?? 0} secret-candidate document(s) never sent`,
+      `  embeddings sent  ${report?.artifact_count_sent ?? 0} document(s),` +
+        ` ${report?.chunk_count_sent ?? 0} bounded chunk(s);` +
+        ` ${report?.secret_candidates_skipped ?? 0} secret-candidate document(s) never sent`,
     );
   }
   console.log(
-    `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), `
-    + `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
+    `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), ` +
+      `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
   );
   console.log(
-    `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s), `
-    + `${summary.cross_root_near_duplicate_count} crossing a root boundary`,
+    `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s), ` +
+      `${summary.cross_root_near_duplicate_count} crossing a root boundary`,
   );
   console.log(
-    `  topic candidates ${summary.topic_candidate_count}, `
-    + `${summary.cross_root_topic_candidate_count} crossing a root boundary`,
+    `  topic candidates ${summary.topic_candidate_count}, ` +
+      `${summary.cross_root_topic_candidate_count} crossing a root boundary`,
   );
   console.log(
-    `  projects         ${summary.project_candidate_count} candidate(s), `
-    + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
-    + `${coverage.reasoning_handoff.reasoning_eligible_candidate_count} reasoning-eligible`,
+    `  projects         ${summary.project_candidate_count} candidate(s), ` +
+      `${summary.cross_root_project_candidate_count} crossing a root boundary, ` +
+      `${coverage.reasoning_handoff.reasoning_eligible_candidate_count} reasoning-eligible`,
   );
   const unsupported = coverage.unsupported_format_counts
     .map((format) => `${format.extension}:${format.count}`)
@@ -401,15 +424,15 @@ function reportCorpusRun(context) {
   const signals = result.documentSignals;
   const participation = signals.analysis_participation;
   console.log(
-    `  decoded formats  ${signals.formats.filter((entry) => entry.decoded_count > 0).length}`
-    + ` (${participation.decoded_document_count} document(s),`
-    + ` ${participation.candidate_member_count} named by a candidate)`,
+    `  decoded formats  ${signals.formats.filter((entry) => entry.decoded_count > 0).length}` +
+      ` (${participation.decoded_document_count} document(s),` +
+      ` ${participation.candidate_member_count} named by a candidate)`,
   );
   for (const entry of participation.by_format) {
     if (entry.decoded_count === 0) continue;
     console.log(
-      `    ${entry.format.padEnd(14)} ${entry.decoded_count} decoded,`
-      + ` ${entry.lexically_analyzed_count} analyzed, ${entry.candidate_member_count} in candidates`,
+      `    ${entry.format.padEnd(14)} ${entry.decoded_count} decoded,` +
+        ` ${entry.lexically_analyzed_count} analyzed, ${entry.candidate_member_count} in candidates`,
     );
   }
   console.log(`  ocr required     ${coverage.documents.ocr_required_count}`);
@@ -419,13 +442,15 @@ function reportCorpusRun(context) {
   // Two sentences for two states (ADR-068): a projection nobody asked for is
   // reported as not run, never as a corpus that declared nothing.
   if (result.architectureEvidence === null) {
-    console.log("  architecture     not run (pass --architecture-evidence to read declared statements)");
+    console.log(
+      "  architecture     not run (pass --architecture-evidence to read declared statements)",
+    );
   } else {
     const manifest = result.architectureEvidence.manifest;
     console.log(
-      `  architecture     ${manifest.record_count} declared statement(s) in ${manifest.document_count} `
-      + `of ${manifest.documents_read} decoded document(s); ${manifest.selected_record_count} selected by `
-      + `${manifest.selection_profile_id}; ${manifest.diagnostic_count} coverage diagnostic(s)`,
+      `  architecture     ${manifest.record_count} declared statement(s) in ${manifest.document_count} ` +
+        `of ${manifest.documents_read} decoded document(s); ${manifest.selected_record_count} selected by ` +
+        `${manifest.selection_profile_id}; ${manifest.diagnostic_count} coverage diagnostic(s)`,
     );
     console.log("  every statement is source-declared and none is authority-verified");
   }
@@ -433,8 +458,8 @@ function reportCorpusRun(context) {
   if (result.fieldSelection !== null && result.fieldSelection !== undefined) {
     const view = result.fieldSelection.manifest;
     console.log(
-      `  field selection  ${view.selected_field_count} field(s) selected for intent ${view.intent} across `
-      + `${view.record_count} document(s) by ${view.policy_id}; written to the external generation only`,
+      `  field selection  ${view.selected_field_count} field(s) selected for intent ${view.intent} across ` +
+        `${view.record_count} document(s) by ${view.policy_id}; written to the external generation only`,
     );
   }
   if (result.semantic === null) {
@@ -442,27 +467,28 @@ function reportCorpusRun(context) {
   } else {
     const semantic = result.semantic;
     const relations = semantic.relations;
-    const lexical = relations.pairs.filter(
-      (pair) => pair.signals.some((signal) => signal.kind !== "embedding_similarity"
-        && signal.kind !== "archive_context"),
+    const lexical = relations.pairs.filter((pair) =>
+      pair.signals.some(
+        (signal) => signal.kind !== "embedding_similarity" && signal.kind !== "archive_context",
+      ),
     ).length;
-    const embeddingRelations = relations.pairs.filter(
-      (pair) => pair.signals.some((signal) => signal.kind === "embedding_similarity"),
+    const embeddingRelations = relations.pairs.filter((pair) =>
+      pair.signals.some((signal) => signal.kind === "embedding_similarity"),
     ).length;
     console.log(
-      `  relationships    ${lexical} lexical/structural, ${embeddingRelations} embedding `
-      + `(${relations.generation.scored_pair_count} scored of `
-      + `${relations.generation.exhaustive_pair_count} possible)`,
+      `  relationships    ${lexical} lexical/structural, ${embeddingRelations} embedding ` +
+        `(${relations.generation.scored_pair_count} scored of ` +
+        `${relations.generation.exhaustive_pair_count} possible)`,
     );
     console.log(
-      `  candidates       ${semantic.summary.topic_candidate_count} topic, `
-      + `${semantic.summary.project_candidate_count} project, `
-      + `${semantic.summary.consolidation_candidate_count} consolidation`,
+      `  candidates       ${semantic.summary.topic_candidate_count} topic, ` +
+        `${semantic.summary.project_candidate_count} project, ` +
+        `${semantic.summary.consolidation_candidate_count} consolidation`,
     );
     console.log(
-      `  reasoning        ${semantic.summary.reasoning_eligible_count} eligible of `
-      + `${semantic.reasoningCandidates.length} routed; `
-      + `${semantic.evidencePacks.length} evidence pack(s)`,
+      `  reasoning        ${semantic.summary.reasoning_eligible_count} eligible of ` +
+        `${semantic.reasoningCandidates.length} routed; ` +
+        `${semantic.evidencePacks.length} evidence pack(s)`,
     );
     // The embedding state is reported above, in one place, with the counts.
     // Repeating it here as a bare on/off was one more line to keep in step.
@@ -473,42 +499,42 @@ function reportCorpusRun(context) {
     // requests to a model server would be the report lying about its own run.
     console.log(
       semantic.embeddingReport.enabled
-        ? "  no language model was called: candidate discovery is deterministic, and the "
-          + "embedding pass calls only the embedding model named above"
+        ? "  no language model was called: candidate discovery is deterministic, and the " +
+            "embedding pass calls only the embedding model named above"
         : "  no model was called: this pass is deterministic and makes zero LLM calls",
     );
   }
   console.log(
-    `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
-    + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
+    `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} ` +
+      `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
   );
   if (cache !== undefined) console.log(`  cache dir        ${cache.root}`);
   const verification = result.snapshot.verification;
   console.log(
-    `  verification     ${verification.mode}${verification.verify_content_requested ? " (--verify-content)" : ""}`
-    + ` -> ${verification.verification_class}`,
+    `  verification     ${verification.mode}${verification.verify_content_requested ? " (--verify-content)" : ""}` +
+      ` -> ${verification.verification_class}`,
   );
   console.log(
-    `  hashes           ${verification.fully_rehashed_artifact_count} read in full, `
-    + `${verification.cached_hash_reuse_count} carried over, `
-    + `${verification.unhashed_artifact_count} unhashed`,
+    `  hashes           ${verification.fully_rehashed_artifact_count} read in full, ` +
+      `${verification.cached_hash_reuse_count} carried over, ` +
+      `${verification.unhashed_artifact_count} unhashed`,
   );
   if (verification.cached_hash_reuse_count > 0) console.log(`  ${verification.statement}`);
   console.log(
-    `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, `
-    + `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
+    `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, ` +
+      `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
   );
   if (resumed.source_ids + resumed.decoder_keys + resumed.analysis_keys > 0) {
     console.log(
-      `  resumed          ${resumed.source_ids} source(s), ${resumed.decoder_keys} decoder key(s), `
-      + `${resumed.analysis_keys} analysis key(s) carried in from a previous session`,
+      `  resumed          ${resumed.source_ids} source(s), ${resumed.decoder_keys} decoder key(s), ` +
+        `${resumed.analysis_keys} analysis key(s) carried in from a previous session`,
     );
   }
   if (result.diff !== null) {
     const counts = result.diff.counts;
     console.log(
-      `  diff             +${counts.added} -${counts.removed} ~${counts.changed_content} `
-      + `renamed-candidate ${counts.renamed_candidate} unchanged ${counts.unchanged}`,
+      `  diff             +${counts.added} -${counts.removed} ~${counts.changed_content} ` +
+        `renamed-candidate ${counts.renamed_candidate} unchanged ${counts.unchanged}`,
     );
     console.log(
       `  archives diff    +${counts.archive_added} -${counts.archive_removed} ~${counts.archive_changed}`,
@@ -521,8 +547,8 @@ function reportCorpusRun(context) {
       console.log(`  candidates diff  not computed: ${analysis.not_computed_reason}`);
     } else {
       console.log(
-        `  candidates diff  +${analysis.candidate_added} -${analysis.candidate_removed} `
-        + `~${analysis.candidate_changed} unchanged ${analysis.candidate_unchanged}`,
+        `  candidates diff  +${analysis.candidate_added} -${analysis.candidate_removed} ` +
+          `~${analysis.candidate_changed} unchanged ${analysis.candidate_unchanged}`,
       );
       for (const kind of analysis.by_kind) {
         if (kind.added === 0 && kind.removed === 0 && kind.changed === 0) continue;
@@ -538,12 +564,14 @@ function reportCorpusRun(context) {
       console.log(`  caution          ${caution.message}`);
     }
     console.log(
-      `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
-      + `${result.diff.invalidation.retained_content_hash_count} reusable; `
-      + `${result.diff.invalidation.cache_entries_removed} cache entries removed`,
+      `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); ` +
+        `${result.diff.invalidation.retained_content_hash_count} reusable; ` +
+        `${result.diff.invalidation.cache_entries_removed} cache entries removed`,
     );
   }
-  console.log("  no ranking, score or priority is produced; readiness evidence is counts and citations");
+  console.log(
+    "  no ranking, score or priority is produced; readiness evidence is counts and citations",
+  );
   // The generation, then what is in it. An operator reading this needs to know
   // which directory the run landed in, because that is what CURRENT.json now
   // points at and what a later --previous-snapshot would name.
@@ -551,7 +579,9 @@ function reportCorpusRun(context) {
   console.log(`  generation dir   ${published.generation_directory}`);
   console.log(`  current          ${published.current_file}`);
   if (published.reused) {
-    console.log("  generation       reused: this corpus under these rules produced these exact bytes before");
+    console.log(
+      "  generation       reused: this corpus under these rules produced these exact bytes before",
+    );
   }
   if (published.pruned_generation_ids.length > 0) {
     console.log(`  pruned           ${published.pruned_generation_ids.length} older generation(s)`);
@@ -586,7 +616,9 @@ async function runCorpusMode(cli) {
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
   const corpusIntelligence = requireBuilt(path.join(repo, "dist", "corpus_intelligence.js"));
-  const corpusIntelligenceInput = requireBuilt(path.join(repo, "dist", "corpus_intelligence_input.js"));
+  const corpusIntelligenceInput = requireBuilt(
+    path.join(repo, "dist", "corpus_intelligence_input.js"),
+  );
   const { version } = require(path.join(repo, "package.json"));
 
   let specs;
@@ -597,7 +629,8 @@ async function runCorpusMode(cli) {
     fail(error instanceof Error ? error.message : String(error), 2);
     return;
   }
-  if (specs.length === 0) fail("corpus mode needs at least one --root, --manifest or --root-manifest", 2);
+  if (specs.length === 0)
+    fail("corpus mode needs at least one --root, --manifest or --root-manifest", 2);
   // A root that is not there is a decision point, not a detail: either the run
   // stops, or the operator has said they want a snapshot that names what is
   // missing. It is never silently dropped.
@@ -605,8 +638,11 @@ async function runCorpusMode(cli) {
   for (const spec of specs) {
     if (fs.existsSync(spec.path)) continue;
     if (!allowPartial) {
-      fail(`root does not exist: ${spec.path}. Pass --allow-partial-roots to emit a `
-        + "snapshot that records it as missing instead.", 2);
+      fail(
+        `root does not exist: ${spec.path}. Pass --allow-partial-roots to emit a ` +
+          "snapshot that records it as missing instead.",
+        2,
+      );
     }
   }
   const rootPaths = specs.map((spec) => path.resolve(spec.path));
@@ -618,15 +654,22 @@ async function runCorpusMode(cli) {
   // work.status through the interpretation pass; without it every Markdown
   // proposal is an unknown role. Refused before anything is read.
   if (cli.flag("--architecture-evidence") && cli.flag("--no-interpret")) {
-    fail("--architecture-evidence needs the interpretation pass that --no-interpret disables. "
-      + "Drop one of the two switches.", 2);
+    fail(
+      "--architecture-evidence needs the interpretation pass that --no-interpret disables. " +
+        "Drop one of the two switches.",
+      2,
+    );
   }
   // The field-selection view reads the roles the architecture-evidence selection
   // assigns. Refused before anything is read, never run with every role unknown.
   const fieldSelectionIntent = cli.opt("--field-selection", null);
-  if (cli.flag("--field-selection") && fieldSelectionIntent === null) fail("--field-selection needs an intent", 2);
+  if (cli.flag("--field-selection") && fieldSelectionIntent === null)
+    fail("--field-selection needs an intent", 2);
   if (fieldSelectionIntent !== null && !cli.flag("--architecture-evidence")) {
-    fail("--field-selection reads the document roles --architecture-evidence assigns; pass both.", 2);
+    fail(
+      "--field-selection reads the document roles --architecture-evidence assigns; pass both.",
+      2,
+    );
   }
   const cacheEnabled = !cli.flag("--no-cache");
   // The session manifest names the work that was finished; the cache holds what
@@ -635,8 +678,11 @@ async function runCorpusMode(cli) {
   // assertions — worse than redoing it. So the combination is refused rather than
   // quietly doing nothing.
   if (cli.flag("--resume") && !cacheEnabled) {
-    fail("--resume needs the cache: the session records what was completed, the cache holds it. "
-      + "Drop --no-cache, or drop --resume to run cold.", 2);
+    fail(
+      "--resume needs the cache: the session records what was completed, the cache holds it. " +
+        "Drop --no-cache, or drop --resume to run cold.",
+      2,
+    );
   }
   let cache;
   if (cacheEnabled) {
@@ -664,7 +710,8 @@ async function runCorpusMode(cli) {
   const session = sessionModule.CorpusSessionStore.open({
     file: sessionPath,
     roots: specs.map((spec) => {
-      const rootKey = spec.name && spec.name.length > 0 ? spec.name : roots.defaultRootKey(spec.path);
+      const rootKey =
+        spec.name && spec.name.length > 0 ? spec.name : roots.defaultRootKey(spec.path);
       return {
         root_id: roots.corpusRootId(rootKey),
         root_key: rootKey,
@@ -749,10 +796,10 @@ async function runCorpusMode(cli) {
     const name = embeddingConfiguration.provider.trim();
     if (name !== httpEmbeddings.HTTP_JSON_PROVIDER) {
       fail(
-        `--embedding-provider '${name}' is not a provider this CLI can run. This package ships `
-        + `one: '${httpEmbeddings.HTTP_JSON_PROVIDER}', which POSTs {model, input} to `
-        + "--embedding-endpoint and reads a vector back. Any other provider is supplied in "
-        + "process through the EmbeddingProvider interface exported from corpus_embeddings.",
+        `--embedding-provider '${name}' is not a provider this CLI can run. This package ships ` +
+          `one: '${httpEmbeddings.HTTP_JSON_PROVIDER}', which POSTs {model, input} to ` +
+          "--embedding-endpoint and reads a vector back. Any other provider is supplied in " +
+          "process through the EmbeddingProvider interface exported from corpus_embeddings.",
         2,
       );
     }
@@ -848,24 +895,42 @@ async function runCorpusMode(cli) {
   // atomic switch of CURRENT.json makes the whole set visible at once. Paths here
   // are relative to that directory, not to the output root.
   const outputs = [
-    { path: "corpus-snapshot.json", contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
+    {
+      path: "corpus-snapshot.json",
+      contents: snapshotModule.renderCorpusSnapshot(result.snapshot),
+    },
     { path: "corpus-candidates.json", contents: scan.renderCorpusCandidates(result.candidates) },
     { path: "readiness-evidence.json", contents: scan.renderReadinessEvidence(result.readiness) },
-    { path: "corpus-coverage.json", contents: coverageModule.renderCorpusCoverage(result.coverage) },
-    { path: "document-index.json", contents: documentsModule.renderDocumentIndex(result.documentIndex) },
-    { path: "document-signals.json", contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals) },
+    {
+      path: "corpus-coverage.json",
+      contents: coverageModule.renderCorpusCoverage(result.coverage),
+    },
+    {
+      path: "document-index.json",
+      contents: documentsModule.renderDocumentIndex(result.documentIndex),
+    },
+    {
+      path: "document-signals.json",
+      contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals),
+    },
     // The report above samples its evidence records. These two are the machine
     // contract: every structured work signal, and a receipt saying how many there
     // are and hashing what was written.
     { path: "document-work-signals.jsonl", contents: result.documentWorkSignals.payloadJsonl },
-    { path: "document-work-signals.manifest.json", contents: result.documentWorkSignals.manifestJson },
+    {
+      path: "document-work-signals.manifest.json",
+      contents: result.documentWorkSignals.manifestJson,
+    },
   ];
   // Opt-in, and absent from the generation when it did not run: the index lists
   // it as not written, which is the honest statement rather than an empty file.
   if (result.architectureEvidence !== null) {
     outputs.push(
       { path: "architecture-evidence.jsonl", contents: result.architectureEvidence.payloadJsonl },
-      { path: "architecture-evidence.manifest.json", contents: result.architectureEvidence.manifestJson },
+      {
+        path: "architecture-evidence.manifest.json",
+        contents: result.architectureEvidence.manifestJson,
+      },
     );
   }
   // The field-selection view, in the same generation as everything it cites:
@@ -878,12 +943,30 @@ async function runCorpusMode(cli) {
   }
   if (result.semantic !== null) {
     outputs.push(
-      { path: "semantic-relations.json", contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
-      { path: "topic-candidates.json", contents: semanticRun.renderTopicCandidates(result.semantic.topics) },
-      { path: "project-candidates.json", contents: semanticRun.renderProjectCandidates(result.semantic.projects) },
-      { path: "consolidation-candidates.json", contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations) },
-      { path: "reasoning-candidates.jsonl", contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates) },
-      { path: "reasoning-evidence-packs.jsonl", contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks) },
+      {
+        path: "semantic-relations.json",
+        contents: semanticRun.renderSemanticRelations(result.semantic.relations),
+      },
+      {
+        path: "topic-candidates.json",
+        contents: semanticRun.renderTopicCandidates(result.semantic.topics),
+      },
+      {
+        path: "project-candidates.json",
+        contents: semanticRun.renderProjectCandidates(result.semantic.projects),
+      },
+      {
+        path: "consolidation-candidates.json",
+        contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations),
+      },
+      {
+        path: "reasoning-candidates.jsonl",
+        contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates),
+      },
+      {
+        path: "reasoning-evidence-packs.jsonl",
+        contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks),
+      },
     );
   }
   // A diff from a previous run describes a comparison this run did not make. It
@@ -986,11 +1069,7 @@ async function runCorpusMode(cli) {
     coverage: result.coverage,
     documentSignals: result.documentSignals,
     rootDirectories: new Map(result.rootPackets.map((root) => [root.root_id, root.directory])),
-    writtenPaths: [
-      ...outputs.map((file) => file.path),
-      "corpus-index.json",
-      "corpus-report.md",
-    ],
+    writtenPaths: [...outputs.map((file) => file.path), "corpus-index.json", "corpus-report.md"],
   });
   outputs.push(
     { path: "corpus-index.json", contents: indexModule.renderCorpusIndex(corpusIndex) },
@@ -1025,7 +1104,9 @@ async function runCorpusMode(cli) {
 function main() {
   const cli = parseArgs(process.argv.slice(2));
   if (cli.corpusMode) {
-    runCorpusMode(cli).catch((error) => fail(error instanceof Error ? error.message : String(error)));
+    runCorpusMode(cli).catch((error) =>
+      fail(error instanceof Error ? error.message : String(error)),
+    );
     return;
   }
   const target = path.resolve(cli.target);
@@ -1125,10 +1206,14 @@ function main() {
     console.log(`  source_kind      ${observation.sourceKind}`);
     console.log(`  source_revision  ${observation.sourceRevision}`);
     console.log(`  snapshot_hash    ${observation.physicalSnapshotHash}`);
-    console.log(`  archives         ${observation.archives.length} observed, ${held.length} held (not expanded)`);
+    console.log(
+      `  archives         ${observation.archives.length} observed, ${held.length} held (not expanded)`,
+    );
     console.log(`  archive members  ${observation.virtualArtifacts.length} observed`);
     console.log(`  symlinks         ${symlinks} observed, 0 followed`);
-    console.log(`  encodings        ${unsupportedEncodings} file(s) not valid UTF-8 (hashed, not interpreted)`);
+    console.log(
+      `  encodings        ${unsupportedEncodings} file(s) not valid UTF-8 (hashed, not interpreted)`,
+    );
     console.log(`  artifacts        ${packet.payload.artifacts.length}`);
     console.log(`  relationships    ${packet.payload.relationships.length}`);
     console.log(`  assertions       ${packet.payload.assertions.length}`);
@@ -1139,24 +1224,36 @@ function main() {
     console.log(`  manifest         ${manifestPath}`);
 
     const summary = corpus.index.summary;
-    console.log(`  work signals     ${summary.artifacts_with_work_signals} artifact(s) with work signals`);
-    console.log(`  open tasks       ${summary.open_task_count} (${summary.completed_task_count} completed)`);
-    console.log(`  declared kinds   ${summary.plan_count} plan(s), ${summary.roadmap_count} roadmap(s)`);
-    console.log(`  declared status  ${summary.wip_count} WIP, ${summary.draft_count} draft, ${summary.blocked_count} blocked`);
     console.log(
-      `  exact duplicates ${summary.exact_duplicate_cluster_count} cluster(s), `
-      + `${summary.exact_duplicate_artifact_count} file(s), ${summary.recoverable_duplicate_bytes} recoverable byte(s)`,
+      `  work signals     ${summary.artifacts_with_work_signals} artifact(s) with work signals`,
     );
     console.log(
-      `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s) at threshold `
-      + `${corpus.index.analysis_profile.near_duplicate_threshold}`
-      + `${nearDuplicatesEnabled ? "" : " (analysis disabled)"}`,
+      `  open tasks       ${summary.open_task_count} (${summary.completed_task_count} completed)`,
     );
-    console.log("  near-duplicate candidates are lexical similarity only; they claim no shared topic");
+    console.log(
+      `  declared kinds   ${summary.plan_count} plan(s), ${summary.roadmap_count} roadmap(s)`,
+    );
+    console.log(
+      `  declared status  ${summary.wip_count} WIP, ${summary.draft_count} draft, ${summary.blocked_count} blocked`,
+    );
+    console.log(
+      `  exact duplicates ${summary.exact_duplicate_cluster_count} cluster(s), ` +
+        `${summary.exact_duplicate_artifact_count} file(s), ${summary.recoverable_duplicate_bytes} recoverable byte(s)`,
+    );
+    console.log(
+      `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s) at threshold ` +
+        `${corpus.index.analysis_profile.near_duplicate_threshold}` +
+        `${nearDuplicatesEnabled ? "" : " (analysis disabled)"}`,
+    );
+    console.log(
+      "  near-duplicate candidates are lexical similarity only; they claim no shared topic",
+    );
     console.log(`  corpus index     ${corpusPaths.indexPath}`);
     console.log(`  corpus report    ${corpusPaths.reportPath}`);
     for (const archive of held) {
-      console.log(`  held: ${archive.sourcePath} — ${archive.holds.map((hold) => hold.code).join(", ")}`);
+      console.log(
+        `  held: ${archive.sourcePath} — ${archive.holds.map((hold) => hold.code).join(", ")}`,
+      );
     }
   } catch (error) {
     failure = error;

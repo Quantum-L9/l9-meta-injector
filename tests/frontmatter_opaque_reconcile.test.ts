@@ -13,23 +13,23 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { injectFile } from "../src/inject";
-import { buildMeta } from "../src/normalize_meta";
-import { extract, splitContent } from "../src/extract";
+import { runApplyAsync } from "../src/apply";
+import type { CheckConfig } from "../src/check";
 import { classify } from "../src/classify";
-import type { NamespaceConfig } from "../src/namespace";
-import { UNKNOWN } from "../src/schema";
+import { extract, splitContent } from "../src/extract";
 import {
   frontMatterReconciliationView,
   inspectFrontMatterDocument,
   opaqueFieldText,
   patchManagedFrontMatter,
 } from "../src/frontmatter_patch";
-import { runApplyAsync } from "../src/apply";
-import type { CheckConfig } from "../src/check";
-import { runSkillsPipelineAsync } from "../src/skills_pipeline";
+import { injectFile } from "../src/inject";
 import { harvestExistingMeta } from "../src/inventory_existing_meta";
 import { resetAdapter, setAdapter } from "../src/llm";
+import type { NamespaceConfig } from "../src/namespace";
+import { buildMeta } from "../src/normalize_meta";
+import { UNKNOWN } from "../src/schema";
+import { runSkillsPipelineAsync } from "../src/skills_pipeline";
 
 const roots: string[] = [];
 
@@ -48,8 +48,12 @@ afterEach(() => {
 });
 
 const NS: NamespaceConfig = {
-  namespace: "l9", authority: "l9.auto", nearDupThreshold: 0.9,
-  hashPrefixLength: 16, outputDir: ".out", indexDir: ".",
+  namespace: "l9",
+  authority: "l9.auto",
+  nearDupThreshold: 0.9,
+  hashPrefixLength: 16,
+  outputDir: ".out",
+  indexDir: ".",
 };
 
 /** Incoming meta as the pipeline builds it, with the placeholder timestamp. */
@@ -59,7 +63,12 @@ function incomingFor(fp: string) {
 }
 
 function injectOnce(fp: string, dryRun = false) {
-  return injectFile(fp, incomingFor(fp), { dryRun, outDir: tempDir("l9-opaque-out-"), verbose: false, writeInjectLog: false });
+  return injectFile(fp, incomingFor(fp), {
+    dryRun,
+    outDir: tempDir("l9-opaque-out-"),
+    verbose: false,
+    writeInjectLog: false,
+  });
 }
 
 const UNQUOTED_NOTES = "---\ncreated_or_detected_at: 2025-10-28T15:30:00Z\n---\n# Notes\n";
@@ -83,7 +92,12 @@ describe("WU-003 opaque managed values reconcile as their verbatim text", () => 
 
     const incoming = incomingFor(fp);
     expect(incoming.created_or_detected_at).toBe(UNKNOWN);
-    injectFile(fp, incoming, { dryRun: false, outDir: tempDir("l9-opaque-out-"), verbose: false, writeInjectLog: false });
+    injectFile(fp, incoming, {
+      dryRun: false,
+      outDir: tempDir("l9-opaque-out-"),
+      verbose: false,
+      writeInjectLog: false,
+    });
 
     const after = fs.readFileSync(fp, "utf8");
     expect(after).toContain("\ncreated_or_detected_at: 2025-10-28T15:30:00Z\n");
@@ -105,14 +119,18 @@ describe("WU-003 opaque managed values reconcile as their verbatim text", () => 
 
     // The reconciliation view is where the unquoted spelling becomes visible.
     const inspected = inspectFrontMatterDocument(UNQUOTED_NOTES);
-    expect(frontMatterReconciliationView(UNQUOTED_NOTES, inspected).created_or_detected_at).toBe("2025-10-28T15:30:00Z");
+    expect(frontMatterReconciliationView(UNQUOTED_NOTES, inspected).created_or_detected_at).toBe(
+      "2025-10-28T15:30:00Z",
+    );
   });
 
   test("AC-WU-003-RC-004-03: the verbatim view sits beside inspection meta, never inside it", () => {
     const inspected = inspectFrontMatterDocument(ISO_TIMESTAMP_DOC);
     // ADR-035 — opaque values never enter parsed meta.
     expect(Object.hasOwn(inspected.meta, "created")).toBe(false);
-    expect(opaqueFieldText(ISO_TIMESTAMP_DOC, inspected)).toEqual({ created: "2025-10-28T15:30:00Z" });
+    expect(opaqueFieldText(ISO_TIMESTAMP_DOC, inspected)).toEqual({
+      created: "2025-10-28T15:30:00Z",
+    });
     const view = frontMatterReconciliationView(ISO_TIMESTAMP_DOC, inspected);
     expect(view).toEqual({ ...inspected.meta, created: "2025-10-28T15:30:00Z" });
     expect(Object.hasOwn(inspected.meta, "created")).toBe(false);
@@ -122,7 +140,10 @@ describe("WU-003 opaque managed values reconcile as their verbatim text", () => 
     const inspected = inspectFrontMatterDocument(ISO_TIMESTAMP_DOC);
     expect(Object.hasOwn(inspected.meta, "created")).toBe(false);
 
-    const patched = patchManagedFrontMatter(ISO_TIMESTAMP_DOC, { id: "artifact-1", artifact_type: "prompt" });
+    const patched = patchManagedFrontMatter(ISO_TIMESTAMP_DOC, {
+      id: "artifact-1",
+      artifact_type: "prompt",
+    });
     expect(patched.safe).toBe(true);
     expect(patched.content).toContain("\ncreated: 2025-10-28T15:30:00Z\n");
   });
@@ -155,7 +176,9 @@ describe("WU-003 opaque managed values reconcile as their verbatim text", () => 
     const fp = path.join(tempDir(), "notes.md");
     const stale = "old/notes:v1.md";
     fs.writeFileSync(fp, `---\nsource_path: ${stale}\n---\n# Notes\n`, "utf8");
-    const field = inspectFrontMatterDocument(fs.readFileSync(fp, "utf8")).fields.find((f) => f.key === "source_path");
+    const field = inspectFrontMatterDocument(fs.readFileSync(fp, "utf8")).fields.find(
+      (f) => f.key === "source_path",
+    );
     expect(field?.kind).toBe("opaque");
 
     const incoming = incomingFor(fp);
@@ -204,7 +227,8 @@ describe("WU-003 governed apply over an opaque managed value", () => {
     const root = tempDir("l9-opaque-apply-");
     fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
     fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), authority(), "utf8");
-    const doc = "---\ncreated_or_detected_at: 2025-10-28T15:30:00Z\ntitle: Runbook\n---\n\n# Runbook\n\nYou are a prompt. Do the task.\n";
+    const doc =
+      "---\ncreated_or_detected_at: 2025-10-28T15:30:00Z\ntitle: Runbook\n---\n\n# Runbook\n\nYou are a prompt. Do the task.\n";
     fs.writeFileSync(path.join(root, "prompt.md"), doc, "utf8");
 
     const result = await runApplyAsync(applyConfig(root));
@@ -226,7 +250,11 @@ describe("WU-003 skills mode sees an opaque description", () => {
     const dir = path.join(root, "skills", "reviewer");
     fs.mkdirSync(dir, { recursive: true });
     const skillPath = path.join(dir, "SKILL.md");
-    fs.writeFileSync(skillPath, "---\nname: reviewer\ndescription: Use when: x\n---\n\n# reviewer\n\nCheck things carefully.\n", "utf8");
+    fs.writeFileSync(
+      skillPath,
+      "---\nname: reviewer\ndescription: Use when: x\n---\n\n# reviewer\n\nCheck things carefully.\n",
+      "utf8",
+    );
     return skillPath;
   }
 
@@ -235,7 +263,12 @@ describe("WU-003 skills mode sees an opaque description", () => {
     const skillPath = writeSkill(root);
     const before = fs.readFileSync(skillPath, "utf8");
     const result = await runSkillsPipelineAsync({
-      root, authority: "l9.auto", dryRun: true, outDir: `${root}.out`, verbose: false, llmEnabled: false,
+      root,
+      authority: "l9.auto",
+      dryRun: true,
+      outDir: `${root}.out`,
+      verbose: false,
+      llmEnabled: false,
     });
     expect(result.considered).toBe(1);
     expect(result.files[0]?.diffs.filter((d) => d.field === "description")).toEqual([]);
@@ -256,7 +289,12 @@ describe("WU-003 skills mode sees an opaque description", () => {
     });
     // llmEnabled without endpoint settings keeps the injected adapter.
     const result = await runSkillsPipelineAsync({
-      root, authority: "l9.auto", dryRun: true, outDir: `${root}.out`, verbose: false, llmEnabled: true,
+      root,
+      authority: "l9.auto",
+      dryRun: true,
+      outDir: `${root}.out`,
+      verbose: false,
+      llmEnabled: true,
     });
     const description = result.files[0]?.diffs.find((d) => d.field === "description");
     expect(description).toBeDefined();
@@ -268,7 +306,11 @@ describe("WU-003 skills mode sees an opaque description", () => {
 describe("WU-003 inventory harvest sees an opaque value", () => {
   test("REG-WU-003-RC-004-a: an opaque title is harvested as its verbatim text", () => {
     const fp = path.join(tempDir("l9-opaque-inv-"), "runbook.md");
-    fs.writeFileSync(fp, "---\ntitle: Runbook: ops guide\nowner: platform\n---\n# Runbook\n", "utf8");
+    fs.writeFileSync(
+      fp,
+      "---\ntitle: Runbook: ops guide\nowner: platform\n---\n# Runbook\n",
+      "utf8",
+    );
     const harvested = harvestExistingMeta(fp, false);
     expect(harvested.title).toBe("Runbook: ops guide");
     expect(harvested.owner).toBe("platform");

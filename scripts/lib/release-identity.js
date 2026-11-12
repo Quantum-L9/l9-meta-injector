@@ -26,7 +26,9 @@ const PLAN_DIRECTORY = "docs/release";
 // tag strings compared equal. Branch and plan-file names use the same grammar.
 const NUMERIC_IDENTIFIER = "(?:0|[1-9]\\d*)";
 const SEMVER_CORE = `${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}`;
-const VERSION_PATTERN = new RegExp(`^(${NUMERIC_IDENTIFIER})\\.(${NUMERIC_IDENTIFIER})\\.(${NUMERIC_IDENTIFIER})$`);
+const VERSION_PATTERN = new RegExp(
+  `^(${NUMERIC_IDENTIFIER})\\.(${NUMERIC_IDENTIFIER})\\.(${NUMERIC_IDENTIFIER})$`,
+);
 const RELEASE_BRANCH_PATTERN = new RegExp(`^release/v(${SEMVER_CORE})$`);
 const PLAN_FILE_PATTERN = new RegExp(`^v(${SEMVER_CORE})-release-plan\\.json$`);
 

@@ -1,4 +1,18 @@
 "use strict";
+// repository_model.ts — Repository Model Packet (`l9.repository-model`) egress.
+//
+// Converts repository observations that this package already owns (inventory +
+// classification evidence) into a deterministic, evidence-preserving packet that the
+// l9-constellation-topology Repository Model consumer accepts without translation.
+//
+// Boundaries this module holds:
+//   - No runtime dependency on the topology implementation, Python, or the network.
+//     The wire contract is mirrored here from the bound consumer revision.
+//   - Machine-specific absolute paths never participate in portable semantic identity.
+//   - Capabilities and relationships are emitted only where repository evidence
+//     supports them; absence stays absent and is reported as a diagnostic.
+//   - Unknowns are preserved as explicit values and diagnostics, never silently
+//     upgraded into certainty.
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -44,31 +58,17 @@ exports.buildRepositoryModelPacket = buildRepositoryModelPacket;
 exports.validateRepositoryModelPacket = validateRepositoryModelPacket;
 exports.emitRepositoryModelBundle = emitRepositoryModelBundle;
 exports.observeRepositoryModel = observeRepositoryModel;
-// repository_model.ts — Repository Model Packet (`l9.repository-model`) egress.
-//
-// Converts repository observations that this package already owns (inventory +
-// classification evidence) into a deterministic, evidence-preserving packet that the
-// l9-constellation-topology Repository Model consumer accepts without translation.
-//
-// Boundaries this module holds:
-//   - No runtime dependency on the topology implementation, Python, or the network.
-//     The wire contract is mirrored here from the bound consumer revision.
-//   - Machine-specific absolute paths never participate in portable semantic identity.
-//   - Capabilities and relationships are emitted only where repository evidence
-//     supports them; absence stays absent and is reported as a diagnostic.
-//   - Unknowns are preserved as explicit values and diagnostics, never silently
-//     upgraded into certainty.
+const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
-const crypto = __importStar(require("node:crypto"));
+const authority_1 = require("./authority");
+const extractors_1 = require("./extractors");
+const git_ignored_1 = require("./git_ignored");
+const interpretation_1 = require("./interpretation");
 const inventory_1 = require("./inventory");
 const ordering_1 = require("./ordering");
-const interpretation_1 = require("./interpretation");
-const extractors_1 = require("./extractors");
 const schema_1 = require("./schema");
-const git_ignored_1 = require("./git_ignored");
-const authority_1 = require("./authority");
 /** Re-exported so packet consumers keep one ordering import site. */
 var ordering_2 = require("./ordering");
 Object.defineProperty(exports, "compareCodePoints", { enumerable: true, get: function () { return ordering_2.compareCodePoints; } });
@@ -128,9 +128,19 @@ function canonicalFloat(value) {
     return new CanonicalFloat(value);
 }
 const VOLATILE_KEYS = new Set([
-    "created_at", "checked_at", "generated_at", "committed_at", "frozen_at",
-    "run_id", "stage_id", "trace_id", "workflow_id",
-    "artifact_hash", "semantic_hash", "packet_id", "receipt_id",
+    "created_at",
+    "checked_at",
+    "generated_at",
+    "committed_at",
+    "frozen_at",
+    "run_id",
+    "stage_id",
+    "trace_id",
+    "workflow_id",
+    "artifact_hash",
+    "semantic_hash",
+    "packet_id",
+    "receipt_id",
 ]);
 function canonicalize(value) {
     if (value === null)
@@ -329,8 +339,12 @@ function repositoryModelArtifactId(repositoryId, sourcePath) {
 // ───────────────────────────── confidence ─────────────────────────────
 function confidence(level, strength, method, authority, completeness) {
     return {
-        level, evidence_strength: strength, derivation_method: method,
-        authority, completeness, conflict_status: "none",
+        level,
+        evidence_strength: strength,
+        derivation_method: method,
+        authority,
+        completeness,
+        conflict_status: "none",
     };
 }
 /**
@@ -356,12 +370,32 @@ const DERIVED_CONFIDENCE = confidence("medium", "direct", "deterministic", "vali
 const REPOSITORY_CONFIDENCE = confidence("medium", "direct", "deterministic", "validated-machine", "partial");
 // ───────────────────────────── path-evidence derivation ─────────────────────────────
 const LANGUAGE_BY_EXTENSION = {
-    ".ts": "TypeScript", ".tsx": "TypeScript", ".mts": "TypeScript", ".cts": "TypeScript",
-    ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
-    ".py": "Python", ".rs": "Rust", ".go": "Go", ".rb": "Ruby", ".java": "Java",
-    ".kt": "Kotlin", ".kts": "Kotlin", ".swift": "Swift", ".cs": "C#", ".php": "PHP",
-    ".c": "C", ".h": "C", ".cc": "C++", ".cpp": "C++", ".hpp": "C++",
-    ".sh": "Shell", ".bash": "Shell", ".sql": "SQL",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".mts": "TypeScript",
+    ".cts": "TypeScript",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".mjs": "JavaScript",
+    ".cjs": "JavaScript",
+    ".py": "Python",
+    ".rs": "Rust",
+    ".go": "Go",
+    ".rb": "Ruby",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".kts": "Kotlin",
+    ".swift": "Swift",
+    ".cs": "C#",
+    ".php": "PHP",
+    ".c": "C",
+    ".h": "C",
+    ".cc": "C++",
+    ".cpp": "C++",
+    ".hpp": "C++",
+    ".sh": "Shell",
+    ".bash": "Shell",
+    ".sql": "SQL",
 };
 /**
  * Root-level filenames that identify a package manager by themselves. Only a file at the
@@ -369,11 +403,20 @@ const LANGUAGE_BY_EXTENSION = {
  * `tests/fixtures/` describes that fixture, not the repository that contains it.
  */
 const PACKAGE_MANAGER_BY_FILENAME = {
-    "package-lock.json": "npm", "npm-shrinkwrap.json": "npm",
-    "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn",
-    "requirements.txt": "pip", "poetry.lock": "poetry", "uv.lock": "uv", "Pipfile": "pipenv",
-    "Cargo.toml": "cargo", "go.mod": "go", "Gemfile": "bundler",
-    "pom.xml": "maven", "build.gradle": "gradle", "build.gradle.kts": "gradle",
+    "package-lock.json": "npm",
+    "npm-shrinkwrap.json": "npm",
+    "pnpm-lock.yaml": "pnpm",
+    "yarn.lock": "yarn",
+    "requirements.txt": "pip",
+    "poetry.lock": "poetry",
+    "uv.lock": "uv",
+    Pipfile: "pipenv",
+    "Cargo.toml": "cargo",
+    "go.mod": "go",
+    Gemfile: "bundler",
+    "pom.xml": "maven",
+    "build.gradle": "gradle",
+    "build.gradle.kts": "gradle",
     "composer.json": "composer",
 };
 /**
@@ -384,16 +427,32 @@ const PACKAGE_MANAGER_BY_FILENAME = {
  * ADR-031 to it): the lockfile beside it decides. These are recorded as an explicit coverage
  * gap rather than resolved to a guess.
  */
-const AMBIGUOUS_PACKAGE_MANIFESTS = new Set(["package.json", "pyproject.toml"]);
+const AMBIGUOUS_PACKAGE_MANIFESTS = new Set([
+    "package.json",
+    "pyproject.toml",
+]);
 const GOVERNANCE_FILENAMES = new Set([
-    "CODEOWNERS", "AGENTS.md", "CLAUDE.md", "GOVERNANCE.md", "SECURITY.md",
-    "CONTRIBUTING.md", "LICENSE", "INVARIANTS.md", "CODE_OF_CONDUCT.md",
+    "CODEOWNERS",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GOVERNANCE.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "INVARIANTS.md",
+    "CODE_OF_CONDUCT.md",
 ]);
 const FAMILY_BY_INVENTORY_TYPE = {
-    code: "code", test: "test", prompt: "prompt", archive: "archive",
-    schema: "configuration", config: "configuration",
-    spec: "documentation", documentation: "documentation",
-    research_markdown: "documentation", research_pdf: "documentation",
+    code: "code",
+    test: "test",
+    prompt: "prompt",
+    archive: "archive",
+    schema: "configuration",
+    config: "configuration",
+    spec: "documentation",
+    documentation: "documentation",
+    research_markdown: "documentation",
+    research_pdf: "documentation",
 };
 function isWorkflowPath(relativePath) {
     return /^\.github\/workflows\/[^/]+\.(ya?ml)$/.test(relativePath);
@@ -450,11 +509,27 @@ const SCHEMA_HASH = semanticHash({
     packet_type: exports.REPOSITORY_MODEL_PACKET_TYPE,
     packet_version: exports.REPOSITORY_MODEL_PACKET_VERSION,
     shell: [
-        "packet_type", "packet_version", "packet_id", "subject", "source_snapshot", "validation",
-        "producer", "profile", "schema_hash", "semantic_hash", "artifact_hash", "payload_refs", "payload",
+        "packet_type",
+        "packet_version",
+        "packet_id",
+        "subject",
+        "source_snapshot",
+        "validation",
+        "producer",
+        "profile",
+        "schema_hash",
+        "semantic_hash",
+        "artifact_hash",
+        "payload_refs",
+        "payload",
     ],
     payload_domains: [
-        "repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics",
+        "repositories",
+        "artifacts",
+        "capabilities",
+        "relationships",
+        "evidence",
+        "diagnostics",
         // 1.1.0 adds semantic assertions as a first-class domain.
         "assertions",
     ],
@@ -588,7 +663,9 @@ function buildRepositoryModelPacket(input) {
             },
             value: {
                 artifact_type: record.artifact_type,
-                ...(record.evidence_excerpt !== null ? { evidence_excerpt: record.evidence_excerpt } : {}),
+                ...(record.evidence_excerpt !== null
+                    ? { evidence_excerpt: record.evidence_excerpt }
+                    : {}),
             },
             confidence: recordConfidence,
         }, producerVersion, generatedAt);
@@ -646,7 +723,8 @@ function buildRepositoryModelPacket(input) {
             const manager = PACKAGE_MANAGER_BY_FILENAME[record.file_name];
             if (manager !== undefined && !packageManagers.has(manager))
                 packageManagers.set(manager, relativePath);
-            if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) && !ambiguousManifests.has(record.file_name)) {
+            if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) &&
+                !ambiguousManifests.has(record.file_name)) {
                 ambiguousManifests.set(record.file_name, relativePath);
             }
         }
@@ -722,7 +800,10 @@ function buildRepositoryModelPacket(input) {
                     stage: OBSERVATION_STAGE,
                     category: "coverage",
                     subject_id: repositoryId,
-                    details: { member_path: member.virtualSourcePath, archive_path: member.parentArchivePath },
+                    details: {
+                        member_path: member.virtualSourcePath,
+                        archive_path: member.parentArchivePath,
+                    },
                 });
                 continue;
             }
@@ -774,11 +855,11 @@ function buildRepositoryModelPacket(input) {
                 confidence: DERIVED_CONFIDENCE,
             });
         }
-        for (const diagnostic of [...local.diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
-            || (0, ordering_1.compareCodePoints)(a.sourcePath ?? "", b.sourcePath ?? "")
-            || (0, ordering_1.compareCodePoints)(a.message, b.message))) {
-            const subjectId = diagnostic.sourcePath !== undefined
-                && emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
+        for (const diagnostic of [...local.diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code) ||
+            (0, ordering_1.compareCodePoints)(a.sourcePath ?? "", b.sourcePath ?? "") ||
+            (0, ordering_1.compareCodePoints)(a.message, b.message))) {
+            const subjectId = diagnostic.sourcePath !== undefined &&
+                emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
                 ? artifactIdFor(diagnostic.sourcePath)
                 : repositoryId;
             diagnostics.push({
@@ -835,7 +916,9 @@ function buildRepositoryModelPacket(input) {
                     revision: foundation.revision,
                     release: foundation.release,
                     admission: foundation.admission,
-                    ledgers: Object.fromEntries(Object.keys(foundation.ledgers).sort(ordering_1.compareCodePoints).map((id) => [id, foundation.ledgers[id]])),
+                    ledgers: Object.fromEntries(Object.keys(foundation.ledgers)
+                        .sort(ordering_1.compareCodePoints)
+                        .map((id) => [id, foundation.ledgers[id]])),
                 },
                 // Declared, as written. Neither value is resolved against an identity
                 // registry here, and neither becomes an owner or repository identity.
@@ -987,15 +1070,32 @@ function buildRepositoryModelPacket(input) {
     // predicate; the producer does not invent one.
     const declaresDependencies = (input.interpretation?.assertions ?? []).some((assertion) => assertion.predicate === "package.dependency" && assertion.subject_id === repositoryId);
     const unsupported = [
-        ["primary_role", "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'."],
-        ["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."],
-        ["entrypoints", "Entrypoints require package-manifest interpretation beyond inventory observation."],
-        ["owner_ids", bindingDeclared
+        [
+            "primary_role",
+            "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'.",
+        ],
+        [
+            "capabilities",
+            "No capability evidence is available to this producer; capabilities is empty by policy.",
+        ],
+        [
+            "entrypoints",
+            "Entrypoints require package-manifest interpretation beyond inventory observation.",
+        ],
+        [
+            "owner_ids",
+            bindingDeclared
                 ? "Ownership is not promoted from the semantic binding: product.owner is carried as declared evidence, not as owner_ids."
-                : "Ownership is not observable from inventory evidence."],
+                : "Ownership is not observable from inventory evidence.",
+        ],
         ...(declaresDependencies
             ? []
-            : [["dependencies", "No package manifest declared a dependency; dependency claims require manifest interpretation."]]),
+            : [
+                [
+                    "dependencies",
+                    "No package manifest declared a dependency; dependency claims require manifest interpretation.",
+                ],
+            ]),
     ];
     for (const [field, message] of unsupported) {
         diagnostics.push({
@@ -1100,9 +1200,9 @@ function buildRepositoryModelPacket(input) {
         capabilities: [],
         relationships: relationships.sort((a, b) => (0, ordering_1.compareCodePoints)(a.edge_id, b.edge_id)),
         evidence: evidence.sort((a, b) => (0, ordering_1.compareCodePoints)(a.evidence_id, b.evidence_id)),
-        diagnostics: diagnostics.sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
-            || (0, ordering_1.compareCodePoints)(a.subject_id ?? "", b.subject_id ?? "")
-            || (0, ordering_1.compareCodePoints)(a.message, b.message)),
+        diagnostics: diagnostics.sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code) ||
+            (0, ordering_1.compareCodePoints)(a.subject_id ?? "", b.subject_id ?? "") ||
+            (0, ordering_1.compareCodePoints)(a.message, b.message)),
         // Already ordered by the interpretation pass; re-sorted here so the packet's
         // ordering guarantee does not depend on the producer of the input.
         //
@@ -1112,13 +1212,12 @@ function buildRepositoryModelPacket(input) {
         // which is a different and much weaker claim. Validation below refuses an
         // assertion whose subject is neither an emitted repository nor an emitted
         // artifact, so preserving the subject cannot strand one.
-        assertions: [...(input.interpretation?.assertions ?? [])]
-            .sort((a, b) => (0, ordering_1.compareCodePoints)(a.source_path, b.source_path)
-            || a.source_range.start_line - b.source_range.start_line
-            || (0, ordering_1.compareCodePoints)(a.predicate, b.predicate)
-            || (0, ordering_1.compareCodePoints)(a.object, b.object)
-            || (0, ordering_1.compareCodePoints)(a.extractor_id, b.extractor_id)
-            || (0, ordering_1.compareCodePoints)(a.subject_id, b.subject_id)),
+        assertions: [...(input.interpretation?.assertions ?? [])].sort((a, b) => (0, ordering_1.compareCodePoints)(a.source_path, b.source_path) ||
+            a.source_range.start_line - b.source_range.start_line ||
+            (0, ordering_1.compareCodePoints)(a.predicate, b.predicate) ||
+            (0, ordering_1.compareCodePoints)(a.object, b.object) ||
+            (0, ordering_1.compareCodePoints)(a.extractor_id, b.extractor_id) ||
+            (0, ordering_1.compareCodePoints)(a.subject_id, b.subject_id)),
     };
     const shell = {
         packet_type: exports.REPOSITORY_MODEL_PACKET_TYPE,
@@ -1165,8 +1264,13 @@ function buildRepositoryModelPacket(input) {
 // ───────────────────────────── producer-side validation ─────────────────────────────
 function check(checkId, checkClass, rule, ok, message, details = {}) {
     return {
-        check_id: checkId, check_class: checkClass, rule,
-        status: ok ? "passed" : "failed", message, evidence_refs: [], details,
+        check_id: checkId,
+        check_class: checkClass,
+        rule,
+        status: ok ? "passed" : "failed",
+        message,
+        evidence_refs: [],
+        details,
     };
 }
 /**
@@ -1199,18 +1303,20 @@ function validateRepositoryModelPacket(packet) {
     });
     checks.push(check("semantic-hash", "invariant", "semantic_hash_is_reproducible", recomputed === packet.semantic_hash, "declared semantic hash matches recomputation", { declared: packet.semantic_hash, calculated: recomputed }));
     checks.push(check("packet-id", "invariant", "packet_id_is_semantically_derived", packet.packet_id === `packet:${packet.semantic_hash.slice(SHA_PREFIX.length)}`, "packet id is derived from the semantic hash"));
-    const absolute = payload.artifacts.filter((a) => a.source_path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(a.source_path) || a.source_path.includes("\\"));
+    const absolute = payload.artifacts.filter((a) => a.source_path.startsWith("/") ||
+        /^[A-Za-z]:[\\/]/.test(a.source_path) ||
+        a.source_path.includes("\\"));
     checks.push(check("portable-paths", "invariant", "source_paths_are_repository_relative", absolute.length === 0, "every artifact source path is a portable repository-relative POSIX path", { offending_count: absolute.length }));
     const orderedArtifacts = payload.artifacts.every((a, i) => i === 0 || (0, ordering_1.compareCodePoints)(payload.artifacts[i - 1].source_path, a.source_path) < 0);
     checks.push(check("stable-ordering", "invariant", "ordering_is_explicit_and_stable", orderedArtifacts, "artifacts are ordered by repository-relative path"));
     // An assertion without a resolvable, hashed span is not evidence of anything,
     // so the producer refuses to emit one rather than letting it reach a consumer.
-    const unsupportedAssertions = payload.assertions.filter((assertion) => !assertion.source_path
-        || !/^sha256:[a-f0-9]{64}$/.test(assertion.source_content_hash)
-        || assertion.source_range.start_line < 1
-        || assertion.source_range.end_line < assertion.source_range.start_line
-        || assertion.evidence_excerpt.length === 0
-        || !assertion.extractor_id);
+    const unsupportedAssertions = payload.assertions.filter((assertion) => !assertion.source_path ||
+        !/^sha256:[a-f0-9]{64}$/.test(assertion.source_content_hash) ||
+        assertion.source_range.start_line < 1 ||
+        assertion.source_range.end_line < assertion.source_range.start_line ||
+        assertion.evidence_excerpt.length === 0 ||
+        !assertion.extractor_id);
     checks.push(check("assertion-evidence", "evidence", "assertions_cite_exact_sources", unsupportedAssertions.length === 0, "every assertion cites an exact source span and a hashed source file", { unsupported_count: unsupportedAssertions.length }));
     // An assertion may attach to the repository as a whole or to one artifact in
     // it. Both are emitted records in this packet, and an assertion pointing at
@@ -1226,10 +1332,12 @@ function validateRepositoryModelPacket(packet) {
     // resemble a credential — the interpreter drops such drafts, and a packet that
     // carries one anyway was not produced by that interpreter.
     const ASSERTION_AUTHORITIES = new Set(["source", "candidate", "unknown"]);
-    const escalated = payload.assertions.filter((assertion) => !ASSERTION_AUTHORITIES.has(assertion.authority)
-        || (assertion.evidence_class !== "declared" && assertion.evidence_class !== "observed"));
+    const escalated = payload.assertions.filter((assertion) => !ASSERTION_AUTHORITIES.has(assertion.authority) ||
+        (assertion.evidence_class !== "declared" && assertion.evidence_class !== "observed"));
     checks.push(check("assertion-authority", "invariant", "assertions_do_not_escalate_authority", escalated.length === 0, "no assertion claims authority above its source or an evidence class the interpreter cannot produce", { escalated_count: escalated.length }));
-    const nonPortable = payload.assertions.filter((assertion) => assertion.source_path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(assertion.source_path) || assertion.source_path.includes("\\"));
+    const nonPortable = payload.assertions.filter((assertion) => assertion.source_path.startsWith("/") ||
+        /^[A-Za-z]:[\\/]/.test(assertion.source_path) ||
+        assertion.source_path.includes("\\"));
     checks.push(check("assertion-portable-paths", "invariant", "assertion_paths_are_repository_relative", nonPortable.length === 0, "every assertion cites a portable repository-relative path", { offending_count: nonPortable.length }));
     const assertionIds = new Set();
     let duplicateAssertions = 0;
@@ -1249,16 +1357,19 @@ function validateRepositoryModelPacket(packet) {
     // An edge's confidence is the confidence of the record it connects (a CONTAINS
     // edge borrows its artifact's classification), so the derivation method is not
     // a statement about the edge; its type and its evidence are.
-    const unsupportedEdges = payload.relationships.filter((edge) => !OBSERVED_EDGE_TYPES.has(edge.edge_type)
-        || edge.confidence.derivation_method === "model-assisted"
-        || edge.evidence_refs.length === 0);
+    const unsupportedEdges = payload.relationships.filter((edge) => !OBSERVED_EDGE_TYPES.has(edge.edge_type) ||
+        edge.confidence.derivation_method === "model-assisted" ||
+        edge.evidence_refs.length === 0);
     checks.push(check("relationship-support", "evidence", "relationships_are_observed_with_evidence", unsupportedEdges.length === 0, "every relationship is an observed containment or ancestry edge with evidence", { unsupported_count: unsupportedEdges.length }));
     const promotedOwners = payload.repositories.filter((repository) => repository.owner_ids.length > 0).length;
     checks.push(check("ownership-not-promoted", "invariant", "owner_ids_are_never_promoted", promotedOwners === 0, "no ownership is promoted into owner_ids; declared ownership stays declared evidence", { promoted_count: promotedOwners }));
-    const admissionClaims = payload.evidence.filter((record) => record.field === "semantic_binding.verification"
-        && (typeof record.value !== "object" || record.value === null || Array.isArray(record.value)
-            || record.value instanceof CanonicalFloat
-            || record.value.admission_granted_by_verification !== false));
+    const admissionClaims = payload.evidence.filter((record) => record.field === "semantic_binding.verification" &&
+        (typeof record.value !== "object" ||
+            record.value === null ||
+            Array.isArray(record.value) ||
+            record.value instanceof CanonicalFloat ||
+            record.value.admission_granted_by_verification !==
+                false));
     checks.push(check("semantic-admission", "invariant", "verification_grants_no_admission", admissionClaims.length === 0, "a verified Foundation digest never claims semantic admission", { offending_count: admissionClaims.length }));
     const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));
     const danglingEvidence = [];
@@ -1267,10 +1378,18 @@ function validateRepositoryModelPacket(packet) {
             if (!evidenceIds.has(ref))
                 danglingEvidence.push(ref);
     };
-    payload.artifacts.forEach((a) => { collect(a.evidence_refs); });
-    payload.repositories.forEach((r) => { collect(r.evidence_refs); });
-    payload.capabilities.forEach((c) => { collect(c.evidence_refs); });
-    payload.relationships.forEach((e) => { collect(e.evidence_refs); });
+    payload.artifacts.forEach((a) => {
+        collect(a.evidence_refs);
+    });
+    payload.repositories.forEach((r) => {
+        collect(r.evidence_refs);
+    });
+    payload.capabilities.forEach((c) => {
+        collect(c.evidence_refs);
+    });
+    payload.relationships.forEach((e) => {
+        collect(e.evidence_refs);
+    });
     checks.push(check("evidence-resolves", "evidence", "evidence_refs_resolve", danglingEvidence.length === 0, "every evidence reference resolves to an emitted evidence record", { dangling_count: danglingEvidence.length }));
     const preservedUnknowns = payload.artifacts.filter((a) => a.content_hash === schema_1.UNKNOWN).length;
     const declaredUnknowns = payload.diagnostics
@@ -1283,8 +1402,8 @@ function validateRepositoryModelPacket(packet) {
         .filter((id) => !artifactIds.has(id));
     checks.push(check("artifact-cross-reference", "cross-reference", "repository_artifact_ids_resolve", missingArtifacts.length === 0, "every repository artifact reference resolves", { missing_count: missingArtifacts.length }));
     const repositoryIds = new Set(payload.repositories.map((r) => r.repository_id));
-    const danglingEdges = payload.relationships.filter((edge) => !(repositoryIds.has(edge.source_id) || artifactIds.has(edge.source_id))
-        || !(repositoryIds.has(edge.target_id) || artifactIds.has(edge.target_id)));
+    const danglingEdges = payload.relationships.filter((edge) => !(repositoryIds.has(edge.source_id) || artifactIds.has(edge.source_id)) ||
+        !(repositoryIds.has(edge.target_id) || artifactIds.has(edge.target_id)));
     checks.push(check("edge-cross-reference", "cross-reference", "relationship_endpoints_resolve", danglingEdges.length === 0, "every relationship endpoint resolves to an emitted record", { dangling_count: danglingEdges.length }));
     const failed = checks.filter((c) => c.status !== "passed");
     return { status: failed.length === 0 ? "passed" : "failed", checks };
@@ -1329,7 +1448,9 @@ function emitRepositoryModelBundle(packet, options) {
     const producerVersion = options.producerVersion ?? packet.producer.version;
     const result = validateRepositoryModelPacket(packet);
     if (result.status !== "passed") {
-        const failures = result.checks.filter((c) => c.status !== "passed").map((c) => `${c.check_id}: ${c.message}`);
+        const failures = result.checks
+            .filter((c) => c.status !== "passed")
+            .map((c) => `${c.check_id}: ${c.message}`);
         throw new Error(`repository-model: refusing to emit a packet that failed producer validation:\n  - ${failures.join("\n  - ")}`);
     }
     const bundleRoot = path.resolve(options.outDir);
@@ -1385,7 +1506,9 @@ function emitRepositoryModelBundle(packet, options) {
  */
 function assertSemanticBindingPolicy(binding, input) {
     const reasons = binding.conflicts.map((item) => `${item.code}: ${item.message}`);
-    if (input.semanticsRoot !== undefined && binding.status === "bound" && binding.verification.status !== "verified") {
+    if (input.semanticsRoot !== undefined &&
+        binding.status === "bound" &&
+        binding.verification.status !== "verified") {
         throw new Error(`repository-model: Semantic Foundation verification failed:\n  - ${reasons.join("\n  - ")}`);
     }
     if (!input.requireSemanticBinding)

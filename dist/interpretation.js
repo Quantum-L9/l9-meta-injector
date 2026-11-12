@@ -65,8 +65,8 @@ exports.interpretRepository = interpretRepository;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const encoding_1 = require("./encoding");
-const semantic_mapping_1 = require("./semantic_mapping");
 const repository_model_1 = require("./repository_model");
+const semantic_mapping_1 = require("./semantic_mapping");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
 /**
@@ -333,7 +333,8 @@ function interpretDocumentContent(input) {
                 });
                 continue;
             }
-            if (draft.sourceRange.start_line < 1 || draft.sourceRange.end_line < draft.sourceRange.start_line) {
+            if (draft.sourceRange.start_line < 1 ||
+                draft.sourceRange.end_line < draft.sourceRange.start_line) {
                 diagnostics.push({
                     code: "interpretation.invalid_source_range",
                     severity: "error",

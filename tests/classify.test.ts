@@ -26,7 +26,11 @@ describe("classify — non-prose files always classify as source (low confidence
     // Body deliberately full of doctrine/kernel/test keywords — must not leak into
     // artifact_type for a non-frontmatter extension (matches namespace.ts's identical
     // FRONTMATTER_EXTS guard for sharing_scope; see tests/namespace.test.ts).
-    const r = classify("/repo/tools/consolidation/core/engine.ts", "kernel runtime engine test doctrine", "none");
+    const r = classify(
+      "/repo/tools/consolidation/core/engine.ts",
+      "kernel runtime engine test doctrine",
+      "none",
+    );
     expect(r.artifactType).toBe("source");
     expect(r.confidence).toBe("low");
   });
@@ -51,7 +55,8 @@ describe("classify — path-pattern signals (high confidence, prose files only)"
   it("docs/decisions/*.md classifies as doctrine regardless of incidental body keywords", () => {
     const adrBody = [
       "# ADR-010: Use the TypeScript pipeline as the sole active engine",
-      "## Status", "Accepted (retrospective)",
+      "## Status",
+      "Accepted (retrospective)",
       "## Context",
       "Operating them as peer runtimes would create competing test suites and check gates.",
     ].join("\n");
@@ -61,7 +66,9 @@ describe("classify — path-pattern signals (high confidence, prose files only)"
   });
 
   it("a generic /adr/ folder convention also classifies as doctrine", () => {
-    expect(classify("/repo/adr/0001-example.md", "irrelevant", "none").artifactType).toBe("doctrine");
+    expect(classify("/repo/adr/0001-example.md", "irrelevant", "none").artifactType).toBe(
+      "doctrine",
+    );
   });
 
   it("path /tests/ stays non-injectable test even when body has no keywords", () => {
@@ -73,17 +80,29 @@ describe("classify — path-pattern signals (high confidence, prose files only)"
 
 describe("classify — keyword-bag fallback (no path pattern match)", () => {
   it("scores the best-matching type at medium confidence when >=2 keywords hit", () => {
-    const r = classify("/repo/docs/notes.md", "This kernel document describes the runtime engine.", "none");
+    const r = classify(
+      "/repo/docs/notes.md",
+      "This kernel document describes the runtime engine.",
+      "none",
+    );
     expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("medium");
   });
   it("scores at low confidence when exactly 1 keyword hits", () => {
-    const r = classify("/repo/docs/notes.md", "This document has some context worth reading.", "none");
+    const r = classify(
+      "/repo/docs/notes.md",
+      "This document has some context worth reading.",
+      "none",
+    );
     expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("low");
   });
   it("defaults to injectable context when zero taxonomy keywords are present", () => {
-    const r = classify("/repo/docs/notes.md", "Lorem ipsum dolor sit amet, consectetur adipiscing elit.", "none");
+    const r = classify(
+      "/repo/docs/notes.md",
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+      "none",
+    );
     expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("low");
     expect(PRIMITIVE_TAXONOMY.context.injectable).toBe(true);
@@ -122,14 +141,37 @@ describe("classify — ADR-018 word-boundary and non-injectable demotion", () =>
   });
 
   it("testing / specification / specific do not classify as test", () => {
-    expect(classify("/repo/docs/evidence-report.md", "phases 3-6 (testing, validation, deployment)", "none").artifactType).not.toBe("test");
-    expect(classify("/repo/docs/system.md", "create a comprehensive specification document that maps", "none").artifactType).not.toBe("test");
-    expect(classify("/repo/docs/blueprint.md", "each with specific tooling, ownership", "none").artifactType).not.toBe("test");
+    expect(
+      classify(
+        "/repo/docs/evidence-report.md",
+        "phases 3-6 (testing, validation, deployment)",
+        "none",
+      ).artifactType,
+    ).not.toBe("test");
+    expect(
+      classify(
+        "/repo/docs/system.md",
+        "create a comprehensive specification document that maps",
+        "none",
+      ).artifactType,
+    ).not.toBe("test");
+    expect(
+      classify("/repo/docs/blueprint.md", "each with specific tooling, ownership", "none")
+        .artifactType,
+    ).not.toBe("test");
   });
 
   it("tooling / Tool Search.md alone do not become script at score 1", () => {
-    expect(classify("/repo/docs/notes.md", "layered tooling ownership", "none").artifactType).not.toBe("script");
-    expect(classify("/repo/Tool Search/Anthropic Tool Search vs L9 Discovery.md", "comparison of discovery approaches", "none").artifactType).not.toBe("script");
+    expect(
+      classify("/repo/docs/notes.md", "layered tooling ownership", "none").artifactType,
+    ).not.toBe("script");
+    expect(
+      classify(
+        "/repo/Tool Search/Anthropic Tool Search vs L9 Discovery.md",
+        "comparison of discovery approaches",
+        "none",
+      ).artifactType,
+    ).not.toBe("script");
   });
 
   it("ambiguous tool+script medium hit demotes away from non-injectable script", () => {
@@ -144,27 +186,41 @@ describe("classify — ADR-018 word-boundary and non-injectable demotion", () =>
   });
 
   it("single script mention demotes to injectable type", () => {
-    const r = classify("/repo/docs/TEMPLATE.md", "write the final research prompt using a script instead of manually", "none");
+    const r = classify(
+      "/repo/docs/TEMPLATE.md",
+      "write the final research prompt using a script instead of manually",
+      "none",
+    );
     expect(r.artifactType).not.toBe("script");
     expect(PRIMITIVE_TAXONOMY[r.artifactType]?.injectable).toBe(true);
   });
 
   it("earned medium+ word-boundary test/script still classify when strong companions hit", () => {
-    const testHit = classify("/repo/docs/notes.md", "This test fixture uses a mock for isolation.", "none");
+    const testHit = classify(
+      "/repo/docs/notes.md",
+      "This test fixture uses a mock for isolation.",
+      "none",
+    );
     expect(testHit.artifactType).toBe("test");
     expect(testHit.confidence).toBe("medium");
 
-    const scriptHit = classify("/repo/docs/notes.md", "A small utility helper script for operators.", "none");
+    const scriptHit = classify(
+      "/repo/docs/notes.md",
+      "A small utility helper script for operators.",
+      "none",
+    );
     expect(scriptHit.artifactType).toBe("script");
     expect(scriptHit.confidence).toBe("medium");
   });
 
   it("test+spec alone (no strong companion) demotes; test+spec+fixture earns test", () => {
     expect(
-      classify("/repo/docs/notes.md", "Cover the test and the spec carefully.", "none").artifactType,
+      classify("/repo/docs/notes.md", "Cover the test and the spec carefully.", "none")
+        .artifactType,
     ).not.toBe("test");
     expect(
-      classify("/repo/docs/notes.md", "Run the test with the spec and the fixture harness.", "none").artifactType,
+      classify("/repo/docs/notes.md", "Run the test with the spec and the fixture harness.", "none")
+        .artifactType,
     ).toBe("test");
   });
 });

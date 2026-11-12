@@ -14,7 +14,11 @@ vi.mock("../src/file_transaction", async (importOriginal) => {
       const result = actual.executeFileTransaction(...args);
       return {
         ...result,
-        cleanupPending: { journalPath: ".l9/transactions/fixture.json", retainedBackups: [], errors: ["EBUSY"] },
+        cleanupPending: {
+          journalPath: ".l9/transactions/fixture.json",
+          retainedBackups: [],
+          errors: ["EBUSY"],
+        },
       };
     },
   };
@@ -28,17 +32,23 @@ function governedRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-apply-cleanup-"));
   roots.push(root);
   fs.mkdirSync(path.join(root, ".l9"));
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-    "default_carrier: inline_managed",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
-  fs.writeFileSync(path.join(root, "prompt.md"), "# Build prompt\n\nRole: auditor\nObjective: report.\n");
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+      "default_carrier: inline_managed",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(root, "prompt.md"),
+    "# Build prompt\n\nRole: auditor\nObjective: report.\n",
+  );
   return root;
 }
 
@@ -54,11 +64,27 @@ describe("apply surfaces a transaction's pending cleanup", () => {
     const root = governedRoot();
     const external = `${root}.out`;
     const result = await runApplyAsync({
-      root, glob: "**/*.md", outDir: external, namespace: "fixture", authority: "l9.doctrine.platform",
-      nearDupThreshold: 0.9, hashPrefixLength: 16, indexDir: external, verbose: false, llmEnabled: false,
-      normalizeFilenames: false, writeInjectLog: false, localFiles: false, persistOutputs: false, dryRun: false,
+      root,
+      glob: "**/*.md",
+      outDir: external,
+      namespace: "fixture",
+      authority: "l9.doctrine.platform",
+      nearDupThreshold: 0.9,
+      hashPrefixLength: 16,
+      indexDir: external,
+      verbose: false,
+      llmEnabled: false,
+      normalizeFilenames: false,
+      writeInjectLog: false,
+      localFiles: false,
+      persistOutputs: false,
+      dryRun: false,
     } as never);
     expect(result.passed).toBe(true);
-    expect(result.warnings.some((w) => /cleanup is pending \(\.l9\/transactions\/fixture\.json\)/.test(w))).toBe(true);
+    expect(
+      result.warnings.some((w) =>
+        /cleanup is pending \(\.l9\/transactions\/fixture\.json\)/.test(w),
+      ),
+    ).toBe(true);
   });
 });

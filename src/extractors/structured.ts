@@ -6,7 +6,16 @@
 // whether a declared dependency is actually used.
 import * as posix from "node:path/posix";
 import { AssertionDraft, Extractor, ExtractorFileInput } from "../interpretation";
-import { basenameIs, declared, keyValue, spanRange, stripComment, stripYamlComment, toLines, unquote } from "./common";
+import {
+  basenameIs,
+  declared,
+  keyValue,
+  spanRange,
+  stripComment,
+  stripYamlComment,
+  toLines,
+  unquote,
+} from "./common";
 
 // ───────────────────────────── manifest/v1 ─────────────────────────────
 
@@ -33,9 +42,11 @@ function dependencyDrafts(
   servers: boolean,
 ): AssertionDraft[] {
   const drafts = [declared("package.dependency", name, index, line, "medium")];
-  if (FRAMEWORK_DEPENDENCIES.has(name)) drafts.push(declared("package.framework", name, index, line));
+  if (FRAMEWORK_DEPENDENCIES.has(name))
+    drafts.push(declared("package.framework", name, index, line));
   // Cargo never read the server vocabulary (it names Python servers).
-  if (servers && SERVER_DEPENDENCIES.has(name)) drafts.push(declared("package.server", name, index, line));
+  if (servers && SERVER_DEPENDENCIES.has(name))
+    drafts.push(declared("package.server", name, index, line));
   return drafts;
 }
 
@@ -224,7 +235,8 @@ function pyprojectAssertions(lines: string[]): AssertionDraft[] {
   // `[tool.poetry]` alone is a packaging declaration even without a build-system.
   if (sawPoetry && !sawBuildBackend) {
     const index = lines.findIndex((line) => stripComment(line).trim() === "[tool.poetry]");
-    if (index >= 0) drafts.push(declared("package.packaging_system", "poetry", index, lines[index]));
+    if (index >= 0)
+      drafts.push(declared("package.packaging_system", "poetry", index, lines[index]));
   }
   return drafts;
 }
@@ -400,7 +412,12 @@ function requirementsAssertions(lines: string[], input: ExtractorFileInput): Ass
     const line = lines[index];
     const bare = line.replace(/(^|\s)#.*$/, "").trim();
     if (bare === "") continue;
-    if (bare.startsWith("-") || /^[a-z][a-z0-9+.-]*:\/\//i.test(bare) || bare.startsWith(".") || bare.startsWith("/")) {
+    if (
+      bare.startsWith("-") ||
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(bare) ||
+      bare.startsWith(".") ||
+      bare.startsWith("/")
+    ) {
       skipped++;
       continue;
     }
@@ -449,7 +466,8 @@ export const manifestExtractor: Extractor = {
 // ─────────────────────── contract-references/v1 ───────────────────────
 
 /** OpenAPI, Swagger and AsyncAPI documents, by their conventional names. */
-const API_CONTRACT_FILE = /^(?:(?:openapi|swagger|asyncapi)(?:[-_.][A-Za-z0-9_.-]+)?|[A-Za-z0-9_.-]+\.(?:openapi|asyncapi))\.(?:ya?ml|json)$/i;
+const API_CONTRACT_FILE =
+  /^(?:(?:openapi|swagger|asyncapi)(?:[-_.][A-Za-z0-9_.-]+)?|[A-Za-z0-9_.-]+\.(?:openapi|asyncapi))\.(?:ya?ml|json)$/i;
 const REF_LINE = /^\s*(?:-\s+)?(["']?)\$ref\1\s*:\s*(.+)$/;
 
 /**
@@ -478,8 +496,13 @@ export const contractReferenceExtractor: Extractor = {
       if (value === "" || value.startsWith("#") || value.includes("{")) return;
       const range = spanRange(index, index);
       const claim = (predicate: string, object: string): AssertionDraft => ({
-        predicate, object, sourceRange: range, evidenceExcerpt: line,
-        evidenceClass: "declared", authority: "source", confidence: "high",
+        predicate,
+        object,
+        sourceRange: range,
+        evidenceExcerpt: line,
+        evidenceClass: "declared",
+        authority: "source",
+        confidence: "high",
       });
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
         drafts.push(claim("contract.reference.remote", value));
@@ -487,10 +510,13 @@ export const contractReferenceExtractor: Extractor = {
       }
       const file = value.split("#")[0];
       const joined = posix.normalize(posix.join(posix.dirname(input.sourcePath), file));
-      const inside = file !== "" && !joined.startsWith("../") && joined !== ".." && !joined.startsWith("/");
-      drafts.push(inside && input.pathExists(joined)
-        ? claim("contract.reference.local", joined)
-        : claim("contract.reference.unresolved", value));
+      const inside =
+        file !== "" && !joined.startsWith("../") && joined !== ".." && !joined.startsWith("/");
+      drafts.push(
+        inside && input.pathExists(joined)
+          ? claim("contract.reference.local", joined)
+          : claim("contract.reference.unresolved", value),
+      );
     });
     return drafts;
   },

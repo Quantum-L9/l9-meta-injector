@@ -1,4 +1,4 @@
-import { SemanticArtifactClass, ArtifactClassification } from "./schema";
+import { ArtifactClassification, SemanticArtifactClass } from "./schema";
 /** The 17 semantic classes, in canonical order. */
 export declare const SEMANTIC_ARTIFACT_CLASSES: readonly SemanticArtifactClass[];
 /**

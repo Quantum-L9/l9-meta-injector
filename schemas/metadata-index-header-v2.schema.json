@@ -3,13 +3,7 @@
   "$id": "https://l9.dev/schemas/metadata-index-header-v2.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema",
-    "kind",
-    "repository_id",
-    "producer_version",
-    "policy_contract"
-  ],
+  "required": ["schema", "kind", "repository_id", "producer_version", "policy_contract"],
   "properties": {
     "schema": {
       "const": "l9.metadata-index/v2"

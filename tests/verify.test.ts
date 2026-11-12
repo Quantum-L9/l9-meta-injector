@@ -1,10 +1,10 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { verify } from "../src/verify";
 import { contentHash, stripExistingFrontMatter } from "../src/extract";
 import { inspectFrontMatterDocument, patchManagedFrontMatter } from "../src/frontmatter_patch";
 import { NormalizedMeta } from "../src/schema";
+import { verify } from "../src/verify";
 
 // verify() only reads these fields off the meta; a minimal cast is sufficient.
 const meta = {

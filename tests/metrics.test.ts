@@ -1,9 +1,10 @@
 // OBS-009 / OBS-010 — MetricsCollector aggregates the LLM/IO hotpath signal and the
 // TRUE decision path (never inferred from adapter presence). Plus ICC-005 —
 // normalizeMetaRecord coerces the typed BaseHeader fields at the reconcile edge.
-import { MetricsCollector, decisionPathLabel } from "../src/metrics";
+
+import { LlmDiagnostic, resetAdapter, setAdapter } from "../src/llm";
+import { decisionPathLabel, MetricsCollector } from "../src/metrics";
 import { reconcileFieldsAsync } from "../src/reconcile_fields";
-import { setAdapter, resetAdapter, LlmDiagnostic } from "../src/llm";
 import { normalizeMetaRecord } from "../src/schema";
 
 afterEach(() => resetAdapter());
@@ -11,8 +12,13 @@ afterEach(() => resetAdapter());
 describe("OBS-010 — MetricsCollector aggregates calls / failures / latency", () => {
   test("onLlmDiagnostic counts calls and failures and computes percentiles", () => {
     const m = new MetricsCollector();
-    const diag = (o: LlmDiagnostic["outcome"], ms: number): LlmDiagnostic => ({ outcome: o, durationMs: ms });
-    [diag("ok", 10), diag("ok", 20), diag("http_error", 30), diag("timeout", 40)].forEach(m.onLlmDiagnostic);
+    const diag = (o: LlmDiagnostic["outcome"], ms: number): LlmDiagnostic => ({
+      outcome: o,
+      durationMs: ms,
+    });
+    [diag("ok", 10), diag("ok", 20), diag("http_error", 30), diag("timeout", 40)].forEach(
+      m.onLlmDiagnostic,
+    );
     const s = m.snapshot();
     expect(s.llmCalls).toBe(4);
     expect(s.llmFailures).toBe(2);
@@ -29,8 +35,10 @@ describe("OBS-010 — MetricsCollector aggregates calls / failures / latency", (
 
   test("recordInject and recordDecision tally", () => {
     const m = new MetricsCollector();
-    m.recordInject(); m.recordInject();
-    m.recordDecision("llm_ok"); m.recordDecision("heuristic");
+    m.recordInject();
+    m.recordInject();
+    m.recordDecision("llm_ok");
+    m.recordDecision("heuristic");
     const s = m.snapshot();
     expect(s.injectedFiles).toBe(2);
     expect(s.decisionPaths.llm_ok).toBe(1);
@@ -45,8 +53,14 @@ describe("OBS-009 — the recorded path reflects reality, not adapter presence",
     // Both values are "good" (>=8 words) so the trivial guards are bypassed and the
     // adapter is actually consulted; it returns null, so the recorded path must show
     // the LLM was consulted and fell back to the heuristic.
-    const existing = { description: "Processes documents in some basic and unremarkable way for the users of the system." };
-    const incoming = { description: "A materially longer and more specific description of the artifact behavior for the retrieval pipeline." };
+    const existing = {
+      description:
+        "Processes documents in some basic and unremarkable way for the users of the system.",
+    };
+    const incoming = {
+      description:
+        "A materially longer and more specific description of the artifact behavior for the retrieval pipeline.",
+    };
     const { diffs } = await reconcileFieldsAsync(existing, incoming, m);
     const d = diffs.find((x) => x.field === "description")!;
     expect(d.reason).toContain("llm_failed_fallback");
@@ -57,8 +71,13 @@ describe("OBS-009 — the recorded path reflects reality, not adapter presence",
   test("when classify returns yes, the path is llm_ok and the reason says so", async () => {
     setAdapter({ estimateTokens: () => 1, classify: async () => "yes" });
     const m = new MetricsCollector();
-    const existing = { description: "Processes documents in some basic way for the users of the system." };
-    const incoming = { description: "Normalizes documents into structured JSON for the retrieval pipeline end to end." };
+    const existing = {
+      description: "Processes documents in some basic way for the users of the system.",
+    };
+    const incoming = {
+      description:
+        "Normalizes documents into structured JSON for the retrieval pipeline end to end.",
+    };
     const { diffs } = await reconcileFieldsAsync(existing, incoming, m);
     const d = diffs.find((x) => x.field === "description")!;
     expect(d.reason).toContain("llm_ok");
@@ -88,8 +107,12 @@ describe("OBS-009 — the recorded path reflects reality, not adapter presence",
 describe("ICC-005 — normalizeMetaRecord coerces typed BaseHeader fields", () => {
   test("string numbers/booleans become numbers/booleans; other keys untouched", () => {
     const out = normalizeMetaRecord({
-      token_cost_estimate: "42", callable: "false", retrievable: "true", injectable: "true",
-      description: "stays a string", namespace: "l9",
+      token_cost_estimate: "42",
+      callable: "false",
+      retrievable: "true",
+      injectable: "true",
+      description: "stays a string",
+      namespace: "l9",
     });
     expect(out.token_cost_estimate).toBe(42);
     expect(out.callable).toBe(false);

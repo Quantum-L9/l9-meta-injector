@@ -73,17 +73,17 @@ const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
-const inventory_1 = require("./inventory");
-const ordering_1 = require("./ordering");
-const corpus_roots_1 = require("./corpus_roots");
-const encoding_1 = require("./encoding");
-const omit_1 = require("./omit");
-const archive_preflight_1 = require("./archive_preflight");
 const archive_execution_1 = require("./archive_execution");
 Object.defineProperty(exports, "ARCHIVE_READER_VERSION", { enumerable: true, get: function () { return archive_execution_1.ARCHIVE_READER_VERSION; } });
-const local_archive_policy_1 = require("./local_archive_policy");
-const zip_reader_1 = require("./zip_reader");
 const archive_formats_1 = require("./archive_formats");
+const archive_preflight_1 = require("./archive_preflight");
+const corpus_roots_1 = require("./corpus_roots");
+const encoding_1 = require("./encoding");
+const inventory_1 = require("./inventory");
+const local_archive_policy_1 = require("./local_archive_policy");
+const omit_1 = require("./omit");
+const ordering_1 = require("./ordering");
+const zip_reader_1 = require("./zip_reader");
 /**
  * Separator between an archive path and a member path in a virtual locator.
  *
@@ -171,8 +171,8 @@ function assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind) {
     // isInsideContainer, not `boundary + path.sep`: a file source directly under
     // `/` has boundary `/`, and `//` is a prefix no path has (RC-058).
     if ((0, corpus_roots_1.isInsideContainer)(boundary, realParent)) {
-        throw new Error("scratch parent resolves inside the observed source and would write into a read-only tree: "
-            + `${scratchParent} resolves to ${realParent}, inside ${boundary}`);
+        throw new Error("scratch parent resolves inside the observed source and would write into a read-only tree: " +
+            `${scratchParent} resolves to ${realParent}, inside ${boundary}`);
     }
 }
 /**
@@ -226,9 +226,7 @@ const EXTRACTION_MARKER_MAX_BYTES = 64 * 1024;
  * platform it contributes nothing, and the lstat that precedes every open below
  * stands in for it.
  */
-const READ_UNTRUSTED_FLAGS = fs.constants.O_RDONLY
-    | (fs.constants.O_NOFOLLOW ?? 0)
-    | (fs.constants.O_NONBLOCK ?? 0);
+const READ_UNTRUSTED_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
 /** The opened object is not a regular file, so its bytes are never read. */
 class NotRegularFileError extends Error {
     constructor() {
@@ -313,7 +311,7 @@ function hasLegacyExtractionOwnership(directory) {
     // `l9-meta-injector.evil` borrow this package's authority. This predicate
     // decides exclusion from observation, not destruction; the destructive path
     // additionally requires the v2 schema.
-    return marker !== null && typeof marker.owner === "string" && marker.owner === exports.EXTRACTION_OWNER_ID;
+    return (marker !== null && typeof marker.owner === "string" && marker.owner === exports.EXTRACTION_OWNER_ID);
 }
 /**
  * True when a directory carries the v2 ownership marker, exact owner and all.
@@ -323,7 +321,9 @@ function hasLegacyExtractionOwnership(directory) {
  */
 function hasExtractionOwnershipV2(directory) {
     const marker = readExtractionOwnershipMarker(directory);
-    return marker !== null && marker.schema === exports.LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === exports.EXTRACTION_OWNER_ID;
+    return (marker !== null &&
+        marker.schema === exports.LOCAL_FILES_EXTRACTION_SCHEMA &&
+        marker.owner === exports.EXTRACTION_OWNER_ID);
 }
 /**
  * True when `directory` is a legacy extraction of an archive that sits beside it.
@@ -546,11 +546,13 @@ function enumerationDiffers(before, after) {
 }
 // ───────────────────────────── record construction ─────────────────────────────
 function inventoryIdFor(relativePath) {
-    return "inv-" + crypto.createHash("sha256").update(relativePath, "utf8").digest("hex").slice(0, 16);
+    return ("inv-" + crypto.createHash("sha256").update(relativePath, "utf8").digest("hex").slice(0, 16));
 }
 function buildLocalRecord(draft) {
     const relative = draft.relativePath;
-    const fileName = relative.includes("/") ? relative.slice(relative.lastIndexOf("/") + 1) : relative;
+    const fileName = relative.includes("/")
+        ? relative.slice(relative.lastIndexOf("/") + 1)
+        : relative;
     const isDir = draft.kind === "directory";
     const extension = isDir ? "" : path.extname(fileName);
     const classified = (0, inventory_1.classifyInventory)(relative, fileName, extension, isDir);
@@ -765,7 +767,7 @@ function stageArchive(context, task, occurrence) {
     // A top-level archive is read from the observed source; a nested one is read
     // from a member this run staged, which is scratch and therefore host-side.
     const readsObservedSource = task.parentArchiveHash === null;
-    const asSourceFailure = (error) => (readsObservedSource ? new SourceReadError(error) : error);
+    const asSourceFailure = (error) => readsObservedSource ? new SourceReadError(error) : error;
     const hash = crypto.createHash("sha256");
     let source = null;
     let target = null;
@@ -904,10 +906,12 @@ function preflightStaged(context, task, staged) {
         }
         const refusal = context.budget.refuseReason(cached.declaredUncompressedBytes);
         if (refusal !== null) {
-            holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+            holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+                {
                     code: "archive.session_budget_exceeded",
                     message: refusal,
-                }]);
+                },
+            ]);
             return null;
         }
         return cached;
@@ -926,10 +930,12 @@ function preflightStaged(context, task, staged) {
         // reading the staged copy is the host's, and is rethrown.
         if (!(error instanceof zip_reader_1.ZipFormatError) && !(error instanceof zip_reader_1.ZipBudgetExceededError))
             throw error;
-        holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+        holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+            {
                 code: "archive.format_unreadable",
                 message: `central directory could not be read: ${error.message}`,
-            }]);
+            },
+        ]);
         return null;
     }
     // Stored before the session budget is consulted: the verdict is a fact about
@@ -943,10 +949,12 @@ function preflightStaged(context, task, staged) {
     }
     const sessionRefusal = context.budget.refuseReason(preflight.declaredUncompressedBytes);
     if (sessionRefusal !== null) {
-        holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+        holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+            {
                 code: "archive.session_budget_exceeded",
                 message: sessionRefusal,
-            }]);
+            },
+        ]);
         return null;
     }
     return preflight;
@@ -1067,17 +1075,19 @@ function acquireArchive(context, task, queue) {
         context.diagnostics.push({
             code: "local-source.source_changed_during_observation",
             severity: "error",
-            message: "SOURCE_CHANGED_DURING_OBSERVATION: "
-                + `${task.sourcePath}: archive bytes changed between hashing and staging `
-                + `(snapshot ${task.expectedArchiveHash}, staged ${staged.archiveHash})`,
+            message: "SOURCE_CHANGED_DURING_OBSERVATION: " +
+                `${task.sourcePath}: archive bytes changed between hashing and staging ` +
+                `(snapshot ${task.expectedArchiveHash}, staged ${staged.archiveHash})`,
         });
-        holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+        holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+            {
                 // The archive's bytes did not match the digest recorded for them, which is
                 // precisely an integrity failure. archive_preflight owns this vocabulary and
                 // is consume-only, so no new code is minted for the same meaning.
                 code: "archive.member_integrity_failed",
                 message: "archive bytes changed between hashing and staging; no member is claimed",
-            }]);
+            },
+        ]);
         return;
     }
     const preflight = preflightStaged(context, task, staged);
@@ -1217,10 +1227,19 @@ function hashStableFile(entry) {
             return { digest: null, reason: portableErrorCode(error), changed: false };
         }
         const after = fs.lstatSync(entry.absolutePath);
-        const matches = observedFileStateMatches({ sizeBytes: before.size, mtimeMs: before.mtimeMs, mtimeNs: beforeNs }, { sizeBytes: after.size, mtimeMs: after.mtimeMs, mtimeNs: highResolutionMtime(entry.absolutePath) });
+        const matches = observedFileStateMatches({ sizeBytes: before.size, mtimeMs: before.mtimeMs, mtimeNs: beforeNs }, {
+            sizeBytes: after.size,
+            mtimeMs: after.mtimeMs,
+            mtimeNs: highResolutionMtime(entry.absolutePath),
+        });
         if (matches) {
             // The bracket that held still across the read is the stat this digest describes.
-            return { digest: candidate, reason: "", changed: false, stat: hashingStatOf(before.size, before.mtimeMs, beforeNs) };
+            return {
+                digest: candidate,
+                reason: "",
+                changed: false,
+                stat: hashingStatOf(before.size, before.mtimeMs, beforeNs),
+            };
         }
         reason = "file changed while it was being hashed";
     }
@@ -1321,7 +1340,10 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
             message: `file exceeds the ${hashMaxBytes}-byte hash budget, so its content hash is absent`,
             sourcePath: entry.relativePath,
         });
-        return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+        return {
+            hashed: { entry, contentHashHex: null, encoding: null, unknowns },
+            unstableReason: null,
+        };
     }
     if (priorHashStillApplies(entry, known)) {
         // The encoding probe still reads the file: it is a bounded prefix read rather
@@ -1359,7 +1381,10 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
             message: `file could not be hashed (${attempt.reason})`,
             sourcePath: entry.relativePath,
         });
-        return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+        return {
+            hashed: { entry, contentHashHex: null, encoding: null, unknowns },
+            unstableReason: null,
+        };
     }
     const encoding = (0, encoding_1.probeFileEncoding)(entry.absolutePath);
     noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
@@ -1419,7 +1444,8 @@ function enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedP
         return enumerateDirectory(absoluteSource, omit, diagnostics, omittedPaths, skippedDirs);
     }
     const stats = fs.lstatSync(absoluteSource);
-    return [{
+    return [
+        {
             absolutePath: absoluteSource,
             relativePath: path.basename(absoluteSource),
             // Derived, not asserted: a source swapped since resolveSourceKind is observed
@@ -1429,7 +1455,8 @@ function enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedP
             mtimeMs: stats.mtimeMs,
             mtimeNs: highResolutionMtime(absoluteSource),
             linkTarget: null,
-        }];
+        },
+    ];
 }
 /**
  * Phase 3 — re-enumerate and compare. Returns why the snapshot is not trustworthy,
@@ -1471,7 +1498,9 @@ function deriveSourceIdentity(hashed, sourceKind, unstableReason) {
     // The source is refused instead. A source that moved while it was hashed keeps
     // its observation so the instability is reported first, as it always was.
     if (sourceKind !== "directory" && singleFileHash === null && unstableReason === null) {
-        const why = hashed.length === 1 && hashed[0].unknowns.length > 0 ? ` (${hashed[0].unknowns.join(", ")})` : "";
+        const why = hashed.length === 1 && hashed[0].unknowns.length > 0
+            ? ` (${hashed[0].unknowns.join(", ")})`
+            : "";
         throw new Error(`local-source: source bytes could not be read, so no ${sourceKind} revision exists${why}`);
     }
     const useFileHash = sourceKind !== "directory" && singleFileHash !== null;
@@ -1639,9 +1668,9 @@ function buildInventoryResult(root, records, skippedDirs, omittedPaths) {
 }
 /** Total order over diagnostics, so a packet's diagnostic list is reproducible. */
 function compareDiagnostics(a, b) {
-    return (0, ordering_1.compareCodePoints)(a.code, b.code)
-        || (0, ordering_1.compareCodePoints)(a.sourcePath ?? "", b.sourcePath ?? "")
-        || (0, ordering_1.compareCodePoints)(a.message, b.message);
+    return ((0, ordering_1.compareCodePoints)(a.code, b.code) ||
+        (0, ordering_1.compareCodePoints)(a.sourcePath ?? "", b.sourcePath ?? "") ||
+        (0, ordering_1.compareCodePoints)(a.message, b.message));
 }
 /**
  * Observe a local source read-only and return everything a deterministic packet
@@ -1669,9 +1698,8 @@ function acquireLocalSource(input) {
     // Enumerate, hash, then re-enumerate. A source that moved between the first and
     // last read has no single snapshot to describe, and saying so is the whole point.
     const entries = enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedPaths, skippedDirs);
-    const { hashed, unstableReason: hashUnstable, hashing } = hashEntries(entries, input.hashMaxBytes, diagnostics, input.knownHashes);
-    const unstableReason = hashUnstable
-        ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
+    const { hashed, unstableReason: hashUnstable, hashing, } = hashEntries(entries, input.hashMaxBytes, diagnostics, input.knownHashes);
+    const unstableReason = hashUnstable ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
     if (unstableReason !== null) {
         diagnostics.push({
             code: "local-source.source_changed_during_observation",
@@ -1690,8 +1718,21 @@ function acquireLocalSource(input) {
     const scratch = createScratch(scratchParent);
     try {
         return finishAcquisition({
-            input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,
-            skippedDirs, hashed, hashing, unstableReason, identity, scratch,
+            input,
+            absoluteSource,
+            sourceKind,
+            sourceName,
+            policy,
+            budget,
+            omit,
+            diagnostics,
+            omittedPaths,
+            skippedDirs,
+            hashed,
+            hashing,
+            unstableReason,
+            identity,
+            scratch,
         });
     }
     catch (error) {
@@ -1725,7 +1766,14 @@ function finishAcquisition(tail) {
     }
     else if (unstableReason === null) {
         const context = {
-            scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
+            scratch,
+            policy,
+            budget,
+            omit,
+            diagnostics,
+            archives,
+            members,
+            omittedPaths,
             manifests: input.archiveManifests,
             physicalLocatorPrefixes: physicalLocatorPrefixesOf(hashed),
             sourceChanged: archiveSourceChanged,

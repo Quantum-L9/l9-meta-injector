@@ -3,8 +3,8 @@ import {
   isSemanticArtifactClass,
   SEMANTIC_ARTIFACT_CLASSES,
 } from "../src/artifact_class";
-import { SemanticArtifactClass } from "../src/schema";
 import { classifyWithSemantics } from "../src/classify";
+import { SemanticArtifactClass } from "../src/schema";
 
 test("exactly 17 semantic classes", () => expect(SEMANTIC_ARTIFACT_CLASSES).toHaveLength(17));
 
@@ -34,9 +34,7 @@ test.each<[string, SemanticArtifactClass]>([
   ["doctrines/policy.md", "governance_doctrine"],
   ["CHANGELOG.md", "changelog"],
   ["binary.bin", "unknown"],
-])("%s -> %s", (p, expected) =>
-  expect(classifyArtifact(p).artifactClass).toBe(expected)
-);
+])("%s -> %s", (p, expected) => expect(classifyArtifact(p).artifactClass).toBe(expected));
 
 test("a 'manifest' doc is documentation, not build_manifest (order sensitivity)", () =>
   expect(classifyArtifact("docs/manifest.md").artifactClass).toBe("documentation"));

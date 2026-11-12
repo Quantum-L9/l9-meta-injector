@@ -6,22 +6,39 @@
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { NormalizedMeta, InjectionRecord, MetaRecord, asRecord, normalizeMetaRecord, FieldDiff } from "./schema";
-import { serializeToYamlFrontMatter } from "./normalize_meta";
-import { contentHash } from "./extract";
-import { probeFileEncoding } from "./encoding";
-import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
-import { getAdapter } from "./llm";
-import { MetricsCollector } from "./metrics";
-import { parseCanonicalYaml } from "./meta_schema";
-import { frontMatterReconciliationView, inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import {
-  resolveStrategy, StrategySpec, yamlToBlock, stripInjectedBlock,
-  extractInjectedYaml, applyCommentInjection, sidecarPathFor, detectNewlineConvention,
+  applyCommentInjection,
   carrierForbiddenSequences,
+  detectNewlineConvention,
+  extractInjectedYaml,
+  resolveStrategy,
+  StrategySpec,
+  sidecarPathFor,
+  stripInjectedBlock,
+  yamlToBlock,
 } from "./comment";
-import { serializeYamlObject } from "./yaml_serialize";
 import { replaceFileAtomically } from "./durable_write";
+import { probeFileEncoding } from "./encoding";
+import { contentHash } from "./extract";
+import {
+  frontMatterReconciliationView,
+  inspectFrontMatterDocument,
+  patchManagedFrontMatter,
+} from "./frontmatter_patch";
+import { getAdapter } from "./llm";
+import { parseCanonicalYaml } from "./meta_schema";
+import { MetricsCollector } from "./metrics";
+import { serializeToYamlFrontMatter } from "./normalize_meta";
+import { diffsToLogYaml, reconcileFields, reconcileFieldsAsync } from "./reconcile_fields";
+import {
+  asRecord,
+  FieldDiff,
+  InjectionRecord,
+  MetaRecord,
+  NormalizedMeta,
+  normalizeMetaRecord,
+} from "./schema";
+import { serializeYamlObject } from "./yaml_serialize";
 
 // Parse the inner YAML of an existing injected header into a plain object.
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
@@ -98,7 +115,9 @@ function readForInjection(filePath: string): ReadCtx {
   if (spec.strategy === "yaml-frontmatter") {
     const inspected = inspectFrontMatterDocument(raw);
     if (!inspected.safe) {
-      throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${inspected.issue?.code ?? "unknown"}: ${inspected.issue?.message ?? "unsafe header"}`);
+      throw new Error(
+        `FRONTMATTER_UNSAFE: ${filePath}: ${inspected.issue?.code ?? "unknown"}: ${inspected.issue?.message ?? "unsafe header"}`,
+      );
     }
     const cleanBody = managedCarrierFreeBody(filePath, raw);
     return {
@@ -114,7 +133,13 @@ function readForInjection(filePath: string): ReadCtx {
   if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
     const cleanBody = managedCarrierFreeBody(filePath, raw);
     const existingYaml = extractInjectedYaml(raw, spec);
-    return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
+    return {
+      raw,
+      spec,
+      cleanBody,
+      originalBodyHash: contentHash(cleanBody),
+      existingMeta: parseExistingMeta(existingYaml),
+    };
   }
   // sidecar (and skip-binary, which callers guard against): file body is untouched.
   let existingMeta: MetaRecord = {};
@@ -125,9 +150,9 @@ function readForInjection(filePath: string): ReadCtx {
 }
 
 interface Built {
-  targetPath: string;      // file that gets written (source file, or sidecar)
-  newContent: string;      // full new content of targetPath
-  addedLines: string;      // for dry-run diff display
+  targetPath: string; // file that gets written (source file, or sidecar)
+  newContent: string; // full new content of targetPath
+  addedLines: string; // for dry-run diff display
   postBodyHash: string;
   sidecarPath?: string;
   strategy: string;
@@ -140,7 +165,9 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
   if (ctx.spec.strategy === "yaml-frontmatter") {
     const patched = patchManagedFrontMatter(ctx.raw, asRecord(finalMeta));
     if (!patched.safe) {
-      throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${patched.issue?.code ?? "unknown"}: ${patched.issue?.message ?? "unsafe header"}`);
+      throw new Error(
+        `FRONTMATTER_UNSAFE: ${filePath}: ${patched.issue?.code ?? "unknown"}: ${patched.issue?.message ?? "unsafe header"}`,
+      );
     }
     return {
       targetPath: filePath,
@@ -157,18 +184,31 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
     const newline = detectNewlineConvention(ctx.cleanBody);
     // Values are escaped for this carrier so none can end or invalidate the host
     // comment (ADR-057); benign values serialize exactly as in `yamlFm`.
-    const inner = serializeYamlObject(asRecord(finalMeta), { fences: false, forbidden: carrierForbiddenSequences(ctx.spec) });
+    const inner = serializeYamlObject(asRecord(finalMeta), {
+      fences: false,
+      forbidden: carrierForbiddenSequences(ctx.spec),
+    });
     const block = yamlToBlock(inner, ctx.spec, newline);
     const newContent = applyCommentInjection(ctx.cleanBody, block, newline, ctx.spec);
     const postBodyHash = contentHash(stripInjectedBlock(newContent, ctx.spec));
-    return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
+    return {
+      targetPath: filePath,
+      newContent,
+      addedLines: block,
+      postBodyHash,
+      strategy: ctx.spec.strategy,
+    };
   }
 
   // sidecar: source file is left byte-for-byte; metadata goes to <file>.l9meta.yaml
   const sidecar = sidecarPathFor(filePath);
   return {
-    targetPath: sidecar, newContent: yamlFm + "\n", addedLines: yamlFm,
-    postBodyHash: ctx.originalBodyHash, sidecarPath: sidecar, strategy: ctx.spec.strategy,
+    targetPath: sidecar,
+    newContent: yamlFm + "\n",
+    addedLines: yamlFm,
+    postBodyHash: ctx.originalBodyHash,
+    sidecarPath: sidecar,
+    strategy: ctx.spec.strategy,
   };
 }
 
@@ -188,7 +228,12 @@ type WriteResult = PlannedTargetState & {
 function containedDiffPath(outDir: string, sourcePath: string): string {
   const posix = sourcePath.split(path.sep).join("/");
   const segments = posix.split("/");
-  if (!posix || posix === "." || posix.startsWith("/") || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+  if (
+    !posix ||
+    posix === "." ||
+    posix.startsWith("/") ||
+    segments.some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
     throw new Error(`dry-run diff escapes output directory: ${sourcePath}`);
   }
   const leaf = segments[segments.length - 1];
@@ -202,7 +247,13 @@ function containedDiffPath(outDir: string, sourcePath: string): string {
   return diffPath;
 }
 
-function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts: InjectOptions, sourcePath: string): WriteResult {
+function writeInjection(
+  filePath: string,
+  built: Built,
+  diffs: FieldDiff[],
+  opts: InjectOptions,
+  sourcePath: string,
+): WriteResult {
   // Capture target state before any write. This keeps the plan truthful in both
   // read-only check mode and future apply mode, where reading after the write
   // would incorrectly report wouldChange=false.
@@ -218,9 +269,16 @@ function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts
     if (opts.writeDryRunDiff !== false) {
       out.dryRunDiffPath = containedDiffPath(opts.outDir, sourcePath);
       fs.mkdirSync(path.dirname(out.dryRunDiffPath), { recursive: true });
-      const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
+      const added = built.addedLines
+        .split("\n")
+        .map((l) => `+ ${l}`)
+        .join("\n");
       const tgt = built.sidecarPath ? built.sidecarPath : filePath;
-      fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
+      fs.writeFileSync(
+        out.dryRunDiffPath,
+        `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`,
+        "utf8",
+      );
       if (opts.verbose) process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
     }
   } else {
@@ -232,14 +290,24 @@ function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts
     if (out.wouldChange) replaceFileAtomically(built.targetPath, built.newContent);
     if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
       out.injectLogPath = filePath + ".inject.log";
-      replaceFileAtomically(out.injectLogPath, diffsToLogYaml(filePath, diffs, new Date().toISOString()));
+      replaceFileAtomically(
+        out.injectLogPath,
+        diffsToLogYaml(filePath, diffs, new Date().toISOString()),
+      );
     }
     if (opts.verbose) process.stderr.write(`[inject:${built.strategy}] ${built.targetPath}\n`);
   }
   return out;
 }
 
-function record(filePath: string, ctx: ReadCtx, built: Built, finalMeta: NormalizedMeta, opts: InjectOptions, paths: WriteResult): InjectionRecord {
+function record(
+  filePath: string,
+  ctx: ReadCtx,
+  built: Built,
+  finalMeta: NormalizedMeta,
+  opts: InjectOptions,
+  paths: WriteResult,
+): InjectionRecord {
   return {
     sourcePath: filePath,
     targetPath: built.targetPath,
@@ -268,7 +336,12 @@ function finalizeInjectionMeta(
   return { ...meta, ...merged } as NormalizedMeta;
 }
 
-export async function injectFileAsync(filePath: string, meta: NormalizedMeta, opts: InjectOptions, metrics?: MetricsCollector): Promise<InjectionRecord> {
+export async function injectFileAsync(
+  filePath: string,
+  meta: NormalizedMeta,
+  opts: InjectOptions,
+  metrics?: MetricsCollector,
+): Promise<InjectionRecord> {
   const ctx = readForInjection(filePath);
   // Widen the typed producer (NormalizedMeta) onto the shared reconcile-edge record
   // type instead of the untyped Object.fromEntries clone (ICC-005). reconcile reads
@@ -286,7 +359,11 @@ export async function injectFileAsync(filePath: string, meta: NormalizedMeta, op
   return record(filePath, ctx, built, finalMeta, opts, paths);
 }
 
-export function injectFile(filePath: string, meta: NormalizedMeta, opts: InjectOptions): InjectionRecord {
+export function injectFile(
+  filePath: string,
+  meta: NormalizedMeta,
+  opts: InjectOptions,
+): InjectionRecord {
   const ctx = readForInjection(filePath);
   const incomingMeta = asRecord(meta);
   const skipReconcile = opts.reconcileExisting === false;

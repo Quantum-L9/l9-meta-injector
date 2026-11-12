@@ -19,9 +19,8 @@
 //     that looks like a credential is persisted.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { InventoryResult } from "./inventory";
 import { probeFileEncoding } from "./encoding";
-import { SEMANTIC_MAPPING_ID, SEMANTIC_MAPPING_VERSION, semanticMappingIdentity } from "./semantic_mapping";
+import { InventoryResult } from "./inventory";
 import {
   compareCodePoints,
   repositoryModelArtifactId,
@@ -29,6 +28,11 @@ import {
   sha256TextPrefixed,
   stableId,
 } from "./repository_model";
+import {
+  SEMANTIC_MAPPING_ID,
+  SEMANTIC_MAPPING_VERSION,
+  semanticMappingIdentity,
+} from "./semantic_mapping";
 
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 export const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
@@ -442,9 +446,10 @@ export function bindPortableAssertions(
 ): InterpretedAssertion[] {
   return assertions.map((portable) => {
     const { subject_scope: scope, ...rest } = portable;
-    const subjectId = scope === "artifact"
-      ? repositoryModelArtifactId(repositorySubjectId, portable.source_path)
-      : repositorySubjectId;
+    const subjectId =
+      scope === "artifact"
+        ? repositoryModelArtifactId(repositorySubjectId, portable.source_path)
+        : repositorySubjectId;
     return {
       assertion_id: stableId("assertion", {
         subject_id: subjectId,
@@ -471,9 +476,10 @@ export function interpretDocumentContent(input: InterpretDocumentInput): Interpr
   const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
 
   for (const extractor of claiming) {
-    const subjectId = resolvedSubjectScope(extractor, sourcePath) === "artifact"
-      ? repositoryModelArtifactId(input.repositorySubjectId, sourcePath)
-      : input.repositorySubjectId;
+    const subjectId =
+      resolvedSubjectScope(extractor, sourcePath) === "artifact"
+        ? repositoryModelArtifactId(input.repositorySubjectId, sourcePath)
+        : input.repositorySubjectId;
     let drafts: AssertionDraft[];
     const reported: InterpretationDiagnostic[] = [];
     try {
@@ -528,7 +534,10 @@ export function interpretDocumentContent(input: InterpretDocumentInput): Interpr
         });
         continue;
       }
-      if (draft.sourceRange.start_line < 1 || draft.sourceRange.end_line < draft.sourceRange.start_line) {
+      if (
+        draft.sourceRange.start_line < 1 ||
+        draft.sourceRange.end_line < draft.sourceRange.start_line
+      ) {
         diagnostics.push({
           code: "interpretation.invalid_source_range",
           severity: "error",
@@ -633,7 +642,8 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
       diagnostics.push({
         code: "interpretation.not_regular_file",
         severity: "info",
-        message: "path is not a regular file (symbolic link or special entry) and was not opened for interpretation",
+        message:
+          "path is not a regular file (symbolic link or special entry) and was not opened for interpretation",
         source_path: sourcePath,
       });
       continue;
@@ -645,13 +655,15 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
     const encoding = probeFileEncoding(absolute);
     if (encoding.status !== "utf8") {
       diagnostics.push({
-        code: encoding.status === "unreadable"
-          ? "interpretation.unreadable"
-          : "interpretation.unsupported_encoding",
+        code:
+          encoding.status === "unreadable"
+            ? "interpretation.unreadable"
+            : "interpretation.unsupported_encoding",
         severity: "warning",
-        message: encoding.status === "unreadable"
-          ? `file could not be read: ${encoding.reason}`
-          : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
+        message:
+          encoding.status === "unreadable"
+            ? `file could not be read: ${encoding.reason}`
+            : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
         source_path: sourcePath,
       });
       continue;

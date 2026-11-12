@@ -6,8 +6,8 @@
 // fails here rather than in someone's terminal.
 import * as cp from "node:child_process";
 import * as crypto from "node:crypto";
-import * as http from "node:http";
 import * as fs from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -51,8 +51,12 @@ function runAsync(args: string[]): Promise<Run> {
     const child = cp.spawn(process.execPath, [CLI, ...args], { encoding: "utf8" });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
-    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
     child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
 }
@@ -85,8 +89,10 @@ function fixture(): Fixture {
 function argsFor(f: Fixture, extra: string[] = []): string[] {
   return [
     ...f.roots.flatMap((root) => ["--root", `${root}=${path.basename(root)}`]),
-    "--out", f.out,
-    "--cache-dir", f.cache,
+    "--out",
+    f.out,
+    "--cache-dir",
+    f.cache,
     ...extra,
   ];
 }
@@ -111,8 +117,11 @@ function generation(f: Fixture): string {
 }
 
 /** The roots recorded in a fixture's snapshot. */
-function snapshotRoots(f: Fixture): { root_key: string; rmp_packet_id: string; bundle_ref: string }[] {
-  return JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8")).roots;
+function snapshotRoots(
+  f: Fixture,
+): { root_key: string; rmp_packet_id: string; bundle_ref: string }[] {
+  return JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"))
+    .roots;
 }
 
 describe("corpus mode", () => {
@@ -146,7 +155,9 @@ describe("corpus mode", () => {
 
     // And the per-format decoding table, which is where a decoder wired to
     // nothing becomes visible: decoded above zero, understood at zero.
-    expect(report).toMatch(/\| format \| decoder \| eligible \| decoded \| understood \| refused \|/);
+    expect(report).toMatch(
+      /\| format \| decoder \| eligible \| decoded \| understood \| refused \|/,
+    );
     const index = JSON.parse(
       fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"),
     );
@@ -242,22 +253,35 @@ describe("corpus mode", () => {
         "document-index.json",
         "local-source-manifest.json",
       ]);
-      expect(fs.readdirSync(path.join(dir, "bundle")).sort())
-        .toEqual(["manifest.json", "packet.json", "receipts"]);
+      expect(fs.readdirSync(path.join(dir, "bundle")).sort()).toEqual([
+        "manifest.json",
+        "packet.json",
+        "receipts",
+      ]);
       const bundle = JSON.parse(fs.readFileSync(path.join(dir, "bundle", "manifest.json"), "utf8"));
       const entry = snapshotRoots(f).find((r: { root_key: string }) => r.root_key === root);
       expect(entry?.rmp_packet_id).toBe(bundle.packet_id);
       expect(entry?.bundle_ref).toBe(`roots/${root}/bundle`);
     }
-    const snapshot = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"));
-    const candidates = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"));
-    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
-    const readiness = JSON.parse(fs.readFileSync(path.join(generation(f), "readiness-evidence.json"), "utf8"));
+    const snapshot = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"),
+    );
+    const candidates = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"),
+    );
+    const coverage = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"),
+    );
+    const readiness = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "readiness-evidence.json"), "utf8"),
+    );
     const session = JSON.parse(
       fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"),
     );
 
-    const signals = JSON.parse(fs.readFileSync(path.join(generation(f), "document-signals.json"), "utf8"));
+    const signals = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "document-signals.json"), "utf8"),
+    );
 
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
@@ -270,7 +294,8 @@ describe("corpus mode", () => {
     expect(signals.analysis_participation.decoded_document_count).toBeGreaterThan(0);
     expect(signals.analysis_participation.candidate_member_count).toBeGreaterThan(0);
     expect(signals.decoder_profiles.length).toBeGreaterThan(0);
-    for (const profile of signals.decoder_profiles) expect(profile).toMatch(/^l9\.[a-z-]+@\d+\.\d+\.\d+$/);
+    for (const profile of signals.decoder_profiles)
+      expect(profile).toMatch(/^l9\.[a-z-]+@\d+\.\d+\.\d+$/);
     expect(readiness.schema).toBe("l9.readiness-evidence/v1");
     expect(session.schema).toBe("l9.corpus-session/v1");
     expect(snapshot.counts.root_count).toBe(3);
@@ -295,11 +320,20 @@ describe("corpus mode", () => {
     const result = run(argsFor(f));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("architecture     not run");
-    const index = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"));
-    const listed = index.documents.filter((document: { name: string }) => document.name.startsWith("architecture_evidence"));
-    expect(listed.map((document: { present: boolean }) => document.present)).toEqual([false, false]);
+    const index = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"),
+    );
+    const listed = index.documents.filter((document: { name: string }) =>
+      document.name.startsWith("architecture_evidence"),
+    );
+    expect(listed.map((document: { present: boolean }) => document.present)).toEqual([
+      false,
+      false,
+    ]);
     expect(fs.existsSync(path.join(generation(f), "architecture-evidence.jsonl"))).toBe(false);
-    const snapshot = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"));
+    const snapshot = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"),
+    );
     expect(snapshot.architecture_evidence).toBeUndefined();
     expect(snapshot.analysis.architecture_evidence_profile).toBeUndefined();
   });
@@ -312,10 +346,14 @@ describe("corpus mode", () => {
     expect(result.status).toBe(0);
     expect(f.roots.map((root) => treeSnapshot(root))).toEqual(before);
     expect(result.stdout).toMatch(/architecture {5}\d+ declared statement\(s\)/);
-    expect(result.stdout).toContain("every statement is source-declared and none is authority-verified");
+    expect(result.stdout).toContain(
+      "every statement is source-declared and none is authority-verified",
+    );
 
     const dir = generation(f);
-    const manifest = JSON.parse(fs.readFileSync(path.join(dir, "architecture-evidence.manifest.json"), "utf8"));
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(dir, "architecture-evidence.manifest.json"), "utf8"),
+    );
     const payload = fs.readFileSync(path.join(dir, "architecture-evidence.jsonl"), "utf8");
     const lines = payload.split("\n").filter((line) => line.length > 0);
     expect(manifest.schema).toBe("l9.architecture-evidence-manifest/v1");
@@ -325,10 +363,14 @@ describe("corpus mode", () => {
     expect(payload).not.toContain(os.tmpdir());
 
     const index = JSON.parse(fs.readFileSync(path.join(dir, "corpus-index.json"), "utf8"));
-    const listed = index.documents.filter((document: { name: string }) => document.name.startsWith("architecture_evidence"));
+    const listed = index.documents.filter((document: { name: string }) =>
+      document.name.startsWith("architecture_evidence"),
+    );
     expect(listed.map((document: { present: boolean }) => document.present)).toEqual([true, true]);
     const snapshot = JSON.parse(fs.readFileSync(path.join(dir, "corpus-snapshot.json"), "utf8"));
-    expect(snapshot.architecture_evidence.payload_artifact_hash).toBe(manifest.payload_artifact_hash);
+    expect(snapshot.architecture_evidence.payload_artifact_hash).toBe(
+      manifest.payload_artifact_hash,
+    );
     expect(snapshot.analysis.architecture_evidence_profile).toBe(manifest.profile_hash);
     expect(snapshot.analysis.corpus_analysis_id).toBe(manifest.corpus_analysis_id);
   });
@@ -336,14 +378,20 @@ describe("corpus mode", () => {
   it("keeps every mount point out of the semantic projections", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
-    for (const name of ["corpus-snapshot.json", "corpus-candidates.json", "readiness-evidence.json", "corpus-coverage.json"]) {
+    for (const name of [
+      "corpus-snapshot.json",
+      "corpus-candidates.json",
+      "readiness-evidence.json",
+      "corpus-coverage.json",
+    ]) {
       const contents = fs.readFileSync(path.join(generation(f), name), "utf8");
       for (const root of f.roots) expect(contents).not.toContain(root);
       expect(contents).not.toContain(os.tmpdir());
     }
     // The session manifest is operational and does carry them, on purpose.
-    expect(fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"))
-      .toContain(f.corpus.oldSsd);
+    expect(fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8")).toContain(
+      f.corpus.oldSsd,
+    );
   });
 
   it("diffs against its own previous snapshot on the next run", () => {
@@ -351,7 +399,11 @@ describe("corpus mode", () => {
     expect(run(argsFor(f)).status).toBe(0);
     expect(fs.existsSync(path.join(generation(f), "corpus-diff.json"))).toBe(false);
 
-    fs.writeFileSync(path.join(f.corpus.oldSsd, "notes/tuesday.md"), "# Tuesday\n\nA new note.\n", "utf8");
+    fs.writeFileSync(
+      path.join(f.corpus.oldSsd, "notes/tuesday.md"),
+      "# Tuesday\n\nA new note.\n",
+      "utf8",
+    );
     const second = run(argsFor(f));
     expect(second.status).toBe(0);
     const diff = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-diff.json"), "utf8"));
@@ -362,7 +414,9 @@ describe("corpus mode", () => {
     expect(second.stdout).toContain("diff             +1 -0 ~0");
     // The second run reused the first run's work for everything that did not move:
     // only the arrival's own layers, and the two corpus-scope analyses, missed.
-    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
+    const coverage = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"),
+    );
     expect(coverage.cache.misses).toBe(6);
     expect(coverage.cache.hit_ratio).toBeGreaterThan(0.8);
   });
@@ -380,7 +434,8 @@ describe("corpus mode", () => {
     expect(run(argsFor(f)).status).toBe(0);
     const cold = run([
       ...f.roots.flatMap((root) => ["--root", `${root}=${path.basename(root)}`]),
-      "--out", f.out,
+      "--out",
+      f.out,
       "--no-cache",
     ]);
     expect(cold.status).toBe(0);
@@ -392,28 +447,42 @@ describe("corpus mode", () => {
     const manifest = path.join(tmp("l9-corpus-cli-manifest-"), "roots.json");
     fs.writeFileSync(
       manifest,
-      JSON.stringify({ schema: "l9.corpus-roots/v1", roots: f.roots.map((root) => ({ path: root })) }),
+      JSON.stringify({
+        schema: "l9.corpus-roots/v1",
+        roots: f.roots.map((root) => ({ path: root })),
+      }),
       "utf8",
     );
     const result = run(["--root-manifest", manifest, "--out", f.out, "--cache-dir", f.cache]);
     expect(result.status).toBe(0);
-    expect(JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8")).counts.root_count).toBe(3);
+    expect(
+      JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8")).counts
+        .root_count,
+    ).toBe(3);
   });
 
   it("refuses to write its output or its cache inside a root", () => {
     const f = fixture();
     const inside = run([
-      "--root", f.corpus.oldSsd,
-      "--out", path.join(f.corpus.oldSsd, "out"),
-      "--cache-dir", f.cache,
+      "--root",
+      f.corpus.oldSsd,
+      "--out",
+      path.join(f.corpus.oldSsd, "out"),
+      "--cache-dir",
+      f.cache,
     ]);
     expect(inside.status).not.toBe(0);
-    expect(inside.stderr).toContain("refusing to write the corpus output directory inside an observed root");
+    expect(inside.stderr).toContain(
+      "refusing to write the corpus output directory inside an observed root",
+    );
 
     const cacheInside = run([
-      "--root", f.corpus.oldSsd,
-      "--out", f.out,
-      "--cache-dir", path.join(f.corpus.oldSsd, "cache"),
+      "--root",
+      f.corpus.oldSsd,
+      "--out",
+      f.out,
+      "--cache-dir",
+      path.join(f.corpus.oldSsd, "cache"),
     ]);
     expect(cacheInside.status).not.toBe(0);
     expect(cacheInside.stderr).toContain("refusing a cache root inside an observed source tree");
@@ -439,11 +508,17 @@ describe("semantic candidate discovery", () => {
 
     const documents = read("document-index.json");
     const rootOf = new Map<string, string>(
-      documents.documents.map((entry: { artifact_id: string; root_id: string }) =>
-        [entry.artifact_id, entry.root_id]),
+      documents.documents.map((entry: { artifact_id: string; root_id: string }) => [
+        entry.artifact_id,
+        entry.root_id,
+      ]),
     );
     const upstream = new Map<string, string[]>();
-    for (const name of ["topic-candidates.json", "project-candidates.json", "consolidation-candidates.json"]) {
+    for (const name of [
+      "topic-candidates.json",
+      "project-candidates.json",
+      "consolidation-candidates.json",
+    ]) {
       for (const candidate of read(name).candidates) {
         upstream.set(candidate.candidate_id, candidate.member_artifact_ids);
       }
@@ -451,9 +526,16 @@ describe("semantic candidate discovery", () => {
     expect(upstream.size).toBeGreaterThan(0);
 
     let spanning = 0;
-    for (const name of ["topic-candidates.json", "project-candidates.json", "consolidation-candidates.json"]) {
-      const clusters: { candidate_id: string; upstream_candidate_id: string; cross_root: boolean }[] =
-        read("corpus-intelligence", "payload", name);
+    for (const name of [
+      "topic-candidates.json",
+      "project-candidates.json",
+      "consolidation-candidates.json",
+    ]) {
+      const clusters: {
+        candidate_id: string;
+        upstream_candidate_id: string;
+        cross_root: boolean;
+      }[] = read("corpus-intelligence", "payload", name);
       for (const cluster of clusters) {
         const members = upstream.get(cluster.upstream_candidate_id);
         if (members === undefined) continue; // a lexical project candidate
@@ -472,12 +554,21 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
 
-    const relations = JSON.parse(fs.readFileSync(path.join(generation(f), "semantic-relations.json"), "utf8"));
-    const topics = JSON.parse(fs.readFileSync(path.join(generation(f), "topic-candidates.json"), "utf8"));
-    const projects = JSON.parse(fs.readFileSync(path.join(generation(f), "project-candidates.json"), "utf8"));
+    const relations = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "semantic-relations.json"), "utf8"),
+    );
+    const topics = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "topic-candidates.json"), "utf8"),
+    );
+    const projects = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "project-candidates.json"), "utf8"),
+    );
     const consolidation = JSON.parse(
-      fs.readFileSync(path.join(generation(f), "consolidation-candidates.json"), "utf8"));
-    const documents = JSON.parse(fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"));
+      fs.readFileSync(path.join(generation(f), "consolidation-candidates.json"), "utf8"),
+    );
+    const documents = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"),
+    );
 
     expect(relations.schema).toBe("l9.semantic-relations/v1");
     expect(topics.schema).toBe("l9.topic-candidates/v1");
@@ -520,10 +611,16 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
 
-    const queue = fs.readFileSync(path.join(generation(f), "reasoning-candidates.jsonl"), "utf8")
-      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
-    const packs = fs.readFileSync(path.join(generation(f), "reasoning-evidence-packs.jsonl"), "utf8")
-      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
+    const queue = fs
+      .readFileSync(path.join(generation(f), "reasoning-candidates.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line));
+    const packs = fs
+      .readFileSync(path.join(generation(f), "reasoning-evidence-packs.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line));
 
     const eligible = queue.filter((row) => row.reasoning_type !== "NONE");
     expect(packs).toHaveLength(eligible.length);
@@ -565,16 +662,27 @@ describe("semantic candidate discovery", () => {
       "reasoning_candidates",
       "reasoning_evidence_pack_refs",
     ]);
-    for (const domain of ["exact_duplicate_relations", "project_candidates", "readiness_evidence", "document_work_signals"]) {
+    for (const domain of [
+      "exact_duplicate_relations",
+      "project_candidates",
+      "readiness_evidence",
+      "document_work_signals",
+    ]) {
       expect(declared).not.toContain(domain);
     }
     // The lexical topic pass did run, and what it found crosses the boundary.
-    const candidates = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"));
-    const topics = JSON.parse(fs.readFileSync(path.join(cip, "payload", "topic-candidates.json"), "utf8"));
+    const candidates = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"),
+    );
+    const topics = JSON.parse(
+      fs.readFileSync(path.join(cip, "payload", "topic-candidates.json"), "utf8"),
+    );
     expect(topics.length).toBe(candidates.topic_candidates.length);
     expect(topics.length).toBeGreaterThan(0);
     for (const cluster of topics) {
-      expect(cluster.analysis_profile.profile_id).toBe(candidates.analysis_profile.topic_candidate_method);
+      expect(cluster.analysis_profile.profile_id).toBe(
+        candidates.analysis_profile.topic_candidate_method,
+      );
     }
     // Every domain file is still written, empty when not run.
     expect(fs.readdirSync(path.join(cip, "payload")).length).toBe(9);
@@ -596,7 +704,9 @@ describe("semantic candidate discovery", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("interpreted      disabled (--no-interpret); not run");
     expect(result.stdout).not.toMatch(/interpreted\s+0\/0/);
-    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
+    const coverage = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"),
+    );
     expect(coverage.interpretation_enabled).toBe(false);
     expect(coverage.interpretation_coverage).toBeNull();
   });
@@ -605,9 +715,13 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
     for (const name of [
-      "semantic-relations.json", "topic-candidates.json", "project-candidates.json",
-      "consolidation-candidates.json", "reasoning-candidates.jsonl",
-      "reasoning-evidence-packs.jsonl", "document-index.json",
+      "semantic-relations.json",
+      "topic-candidates.json",
+      "project-candidates.json",
+      "consolidation-candidates.json",
+      "reasoning-candidates.jsonl",
+      "reasoning-evidence-packs.jsonl",
+      "document-index.json",
     ]) {
       const text = fs.readFileSync(path.join(generation(f), name), "utf8");
       for (const root of f.roots) expect(text).not.toContain(root);
@@ -636,8 +750,9 @@ describe("the generational output layout", () => {
     // consumer part-way through reading the old one is not pulled out from
     // under, and an operator can compare the two directly.
     const previousDir = path.join(f.out, ...String(first.generation_ref).split("/"));
-    expect(fs.readFileSync(path.join(previousDir, "corpus-snapshot.json"), "utf8"))
-      .toBe(firstSnapshot);
+    expect(fs.readFileSync(path.join(previousDir, "corpus-snapshot.json"), "utf8")).toBe(
+      firstSnapshot,
+    );
 
     // And every file the pointer names is present, with the hash it promised.
     for (const entry of second.files as { path: string; content_hash: string }[]) {
@@ -660,7 +775,9 @@ describe("the generational output layout", () => {
     expect(fs.readdirSync(path.join(f.out, "generations"))).toHaveLength(2);
     // Pruning never touches the one in use.
     const current = JSON.parse(fs.readFileSync(path.join(f.out, "CURRENT.json"), "utf8"));
-    expect(fs.existsSync(path.join(f.out, ...String(current.generation_ref).split("/")))).toBe(true);
+    expect(fs.existsSync(path.join(f.out, ...String(current.generation_ref).split("/")))).toBe(
+      true,
+    );
     expect(fs.existsSync(path.join(generation(f), "corpus-snapshot.json"))).toBe(true);
   });
 
@@ -694,9 +811,9 @@ describe("the worker budgets", () => {
 
   it("still accepts the budgets it enforces, and records them", () => {
     const f = fixture();
-    const result = run(argsFor(f, [
-      "--max-decoder-workers", "3", "--max-memory-bytes", "67108864",
-    ]));
+    const result = run(
+      argsFor(f, ["--max-decoder-workers", "3", "--max-memory-bytes", "67108864"]),
+    );
     expect(result.stderr).toBe("");
     expect(result.status).toBe(0);
     const session = JSON.parse(
@@ -720,40 +837,65 @@ describe("the embedding guards", () => {
 
   it("refuse a remote provider without the separate remote opt-in", () => {
     const f = fixture();
-    const result = run(argsFor(f, [
-      "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
-      "--embedding-locality", "remote", "--embedding-endpoint", "https://acme.example.com",
-    ]));
+    const result = run(
+      argsFor(f, [
+        "--embeddings",
+        "--embedding-provider",
+        "acme",
+        "--embedding-model",
+        "m1",
+        "--embedding-locality",
+        "remote",
+        "--embedding-endpoint",
+        "https://acme.example.com",
+      ]),
+    );
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("--allow-remote-embeddings");
   });
 
   it("refuse a remote endpoint that is not https", () => {
     const f = fixture();
-    const result = run(argsFor(f, [
-      "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
-      "--embedding-locality", "remote", "--embedding-endpoint", "http://acme.example.com",
-      "--allow-remote-embeddings",
-    ]));
+    const result = run(
+      argsFor(f, [
+        "--embeddings",
+        "--embedding-provider",
+        "acme",
+        "--embedding-model",
+        "m1",
+        "--embedding-locality",
+        "remote",
+        "--embedding-endpoint",
+        "http://acme.example.com",
+        "--allow-remote-embeddings",
+      ]),
+    );
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("https://");
   });
 
   it("name the one provider it can run, rather than accepting any name", () => {
     const f = fixture();
-    const result = run(argsFor(f, [
-      "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
-    ]));
+    const result = run(
+      argsFor(f, ["--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1"]),
+    );
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("http-json");
   });
 
   it("refuse a local provider pointed at a host that is not this machine", () => {
     const f = fixture();
-    const result = run(argsFor(f, [
-      "--embeddings", "--embedding-provider", "http-json", "--embedding-model", "m1",
-      "--embedding-endpoint", "https://embeddings.example.com/v1",
-    ]));
+    const result = run(
+      argsFor(f, [
+        "--embeddings",
+        "--embedding-provider",
+        "http-json",
+        "--embedding-model",
+        "m1",
+        "--embedding-endpoint",
+        "https://embeddings.example.com/v1",
+      ]),
+    );
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("loopback");
   });
@@ -777,7 +919,8 @@ describe("an embedding run through the CLI", () => {
       request.on("data", (chunk: Buffer) => chunks.push(chunk));
       request.on("end", () => {
         count += 1;
-        const text = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string }).input;
+        const text = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string })
+          .input;
         // A deterministic function of the text: enough for a cosine, not a model.
         const vector = new Array<number>(12).fill(0);
         for (const word of text.toLowerCase().split(/[^a-z0-9]+/)) {
@@ -803,14 +946,21 @@ describe("an embedding run through the CLI", () => {
   it("embeds against a loopback server and reports what it sent", async () => {
     await withServer(async (url, seen) => {
       const f = fixture();
-      const result = await runAsync(argsFor(f, [
-        "--embeddings",
-        "--embedding-provider", "http-json",
-        "--embedding-model", "toy",
-        "--embedding-endpoint", url,
-        "--embedding-locality", "local",
-        "--max-embedding-workers", "3",
-      ]));
+      const result = await runAsync(
+        argsFor(f, [
+          "--embeddings",
+          "--embedding-provider",
+          "http-json",
+          "--embedding-model",
+          "toy",
+          "--embedding-endpoint",
+          url,
+          "--embedding-locality",
+          "local",
+          "--max-embedding-workers",
+          "3",
+        ]),
+      );
       expect(result.stderr).toBe("");
       expect(result.status).toBe(0);
       // The server was actually called. Without this the rest could pass on a
@@ -861,15 +1011,28 @@ describe("an archive whose member root is a project", () => {
 
     const current = JSON.parse(fs.readFileSync(path.join(out, "CURRENT.json"), "utf8"));
     const dir = path.join(out, ...String(current.generation_ref).split("/"));
-    const payload = JSON.parse(fs.readFileSync(
-      path.join(dir, "corpus-intelligence", "payload", "project-candidates.json"), "utf8"));
-    const clusters: { candidate_type: string; member_artifact_ids: string[]; analysis_profile: { profile_id: string } }[] =
-      Array.isArray(payload) ? payload : payload.project_candidates ?? payload.items ?? payload.candidates;
-    const lexical = clusters.filter((cluster) => cluster.analysis_profile.profile_id === "container-project-candidate/v1");
+    const payload = JSON.parse(
+      fs.readFileSync(
+        path.join(dir, "corpus-intelligence", "payload", "project-candidates.json"),
+        "utf8",
+      ),
+    );
+    const clusters: {
+      candidate_type: string;
+      member_artifact_ids: string[];
+      analysis_profile: { profile_id: string };
+    }[] = Array.isArray(payload)
+      ? payload
+      : (payload.project_candidates ?? payload.items ?? payload.candidates);
+    const lexical = clusters.filter(
+      (cluster) => cluster.analysis_profile.profile_id === "container-project-candidate/v1",
+    );
     expect(lexical).toHaveLength(1);
     expect(lexical[0].member_artifact_ids).toHaveLength(3);
 
-    const candidates = JSON.parse(fs.readFileSync(path.join(dir, "corpus-candidates.json"), "utf8"));
+    const candidates = JSON.parse(
+      fs.readFileSync(path.join(dir, "corpus-candidates.json"), "utf8"),
+    );
     expect(candidates.project_candidates).toHaveLength(1);
     expect(candidates.project_candidates[0].project_key).toBe("project:zipped-proj");
     expect(candidates.project_candidates[0].member_count).toBe(3);
@@ -883,10 +1046,16 @@ describe("corpus-mode index schema id (RC-070, ADR-067)", () => {
     expect(corpusIndex.CORPUS_INDEX_SCHEMA).not.toBe(analysis.CORPUS_INDEX_SCHEMA);
     expect(analysis.CORPUS_INDEX_SCHEMA).toBe("l9.corpus-index/v1");
     expect(corpusIndex.CORPUS_INDEX_SCHEMA).toBe("l9.corpus-mode-index/v1");
-    const builtAnalysis = JSON.stringify(fs.readFileSync(path.join(REPO, "dist", "corpus_analysis.js"), "utf8")
-      .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1]);
-    const builtIndex = JSON.stringify(fs.readFileSync(path.join(REPO, "dist", "corpus_index.js"), "utf8")
-      .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1]);
+    const builtAnalysis = JSON.stringify(
+      fs
+        .readFileSync(path.join(REPO, "dist", "corpus_analysis.js"), "utf8")
+        .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1],
+    );
+    const builtIndex = JSON.stringify(
+      fs
+        .readFileSync(path.join(REPO, "dist", "corpus_index.js"), "utf8")
+        .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1],
+    );
     expect(builtAnalysis).toBe(JSON.stringify(analysis.CORPUS_INDEX_SCHEMA));
     expect(builtIndex).toBe(JSON.stringify(corpusIndex.CORPUS_INDEX_SCHEMA));
   });
@@ -894,17 +1063,30 @@ describe("corpus-mode index schema id (RC-070, ADR-067)", () => {
   it("REG-WU-043-RC-070-b: a corpus run's index declares the corpus-mode id and every work-signal artifact_id resolves in document-index.json", () => {
     const f = fixture();
     // A document that states work, so the machine projection carries records to join.
-    fs.writeFileSync(path.join(f.roots[0], "register.csv"), "owner,status,depends on\nmel,blocked,vendor.md\n");
+    fs.writeFileSync(
+      path.join(f.roots[0], "register.csv"),
+      "owner,status,depends on\nmel,blocked,vendor.md\n",
+    );
     const result = run(argsFor(f));
     expect(result.status, result.stderr).toBe(0);
-    const index = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"));
+    const index = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"),
+    );
     expect(index.schema).toBe("l9.corpus-mode-index/v1");
     expect(index.repository_model).toBeUndefined();
-    const documents = JSON.parse(fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"));
-    const known = new Set<string>(documents.documents.map((entry: { artifact_id: string }) => entry.artifact_id));
-    const records = fs.readFileSync(path.join(generation(f), "document-work-signals.jsonl"), "utf8")
-      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line) as { artifact_id: string });
+    const documents = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"),
+    );
+    const known = new Set<string>(
+      documents.documents.map((entry: { artifact_id: string }) => entry.artifact_id),
+    );
+    const records = fs
+      .readFileSync(path.join(generation(f), "document-work-signals.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as { artifact_id: string });
     expect(records.length).toBeGreaterThan(0);
-    for (const record of records) expect(known.has(record.artifact_id), record.artifact_id).toBe(true);
+    for (const record of records)
+      expect(known.has(record.artifact_id), record.artifact_id).toBe(true);
   });
 });

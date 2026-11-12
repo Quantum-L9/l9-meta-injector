@@ -86,17 +86,114 @@ export type KeyphraseField = "title" | "heading" | "declared_identifier" | "body
  * list. These are words that would otherwise join every document to every other.
  */
 export const KEYPHRASE_STOPWORDS: readonly string[] = [
-  "a", "all", "also", "am", "an", "and", "any", "are", "as", "at", "be",
-  "been", "being", "but", "by", "can", "could", "did", "do", "does", "doing",
-  "done", "for", "from", "had", "has", "have", "having", "he", "her", "here",
-  "hers", "him", "his", "how", "i", "if", "in", "into", "is", "it", "its", "just",
-  "may", "me", "might", "more", "most", "must", "my", "no", "nor", "not", "now",
-  "of", "off", "on", "once", "one", "only", "or", "other", "our", "out", "over",
-  "own", "same", "shall", "she", "should", "so", "some", "such", "than", "that",
-  "the", "their", "them", "then", "there", "these", "they", "this", "those",
-  "through", "to", "too", "under", "until", "up", "us", "very", "was", "we",
-  "were", "what", "when", "where", "which", "while", "who", "whom", "why",
-  "will", "with", "would", "you", "your",
+  "a",
+  "all",
+  "also",
+  "am",
+  "an",
+  "and",
+  "any",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "being",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "doing",
+  "done",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "having",
+  "he",
+  "her",
+  "here",
+  "hers",
+  "him",
+  "his",
+  "how",
+  "i",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "just",
+  "may",
+  "me",
+  "might",
+  "more",
+  "most",
+  "must",
+  "my",
+  "no",
+  "nor",
+  "not",
+  "now",
+  "of",
+  "off",
+  "on",
+  "once",
+  "one",
+  "only",
+  "or",
+  "other",
+  "our",
+  "out",
+  "over",
+  "own",
+  "same",
+  "shall",
+  "she",
+  "should",
+  "so",
+  "some",
+  "such",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "through",
+  "to",
+  "too",
+  "under",
+  "until",
+  "up",
+  "us",
+  "very",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "whom",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your",
 ];
 
 const STOPWORD_SET = new Set(KEYPHRASE_STOPWORDS);
@@ -267,7 +364,12 @@ export interface ArtifactFeatureView {
 
 /** Package-manager manifests whose declared name is a publishable package name. */
 const PACKAGE_MANIFESTS = new Set([
-  "cargo.toml", "composer.json", "deno.json", "deno.jsonc", "package.json", "pyproject.toml",
+  "cargo.toml",
+  "composer.json",
+  "deno.json",
+  "deno.jsonc",
+  "package.json",
+  "pyproject.toml",
 ]);
 
 const TITLE_PREDICATE = "document.title";
@@ -328,11 +430,7 @@ function collectFieldTerms(artifact: SemanticArtifactInput): {
     refsByTerm.set(term, refs);
   };
 
-  const ingest = (
-    text: string,
-    field: keyof FieldTerms,
-    assertionId: string | null,
-  ): void => {
+  const ingest = (text: string, field: keyof FieldTerms, assertionId: string | null): void => {
     const surfaces = analysisTokens(normalizeForAnalysis(text));
     const terms = analysisTerms(text);
     for (const term of terms) {
@@ -348,8 +446,10 @@ function collectFieldTerms(artifact: SemanticArtifactInput): {
   };
 
   for (const assertion of artifact.assertions ?? []) {
-    if (assertion.predicate === TITLE_PREDICATE) ingest(assertion.object, "title", assertion.assertion_id);
-    else if (assertion.predicate === HEADING_PREDICATE) ingest(assertion.object, "heading", assertion.assertion_id);
+    if (assertion.predicate === TITLE_PREDICATE)
+      ingest(assertion.object, "title", assertion.assertion_id);
+    else if (assertion.predicate === HEADING_PREDICATE)
+      ingest(assertion.object, "heading", assertion.assertion_id);
   }
   for (const declared of artifact.declared_identifiers ?? []) {
     ingest(declared.identifier, "declared_identifier", null);
@@ -399,8 +499,10 @@ function prepare(artifact: SemanticArtifactInput): PreparedArtifact {
 function displayTermFor(prepared: PreparedArtifact, term: string): string {
   const counts = prepared.displayByTerm.get(term);
   if (counts === undefined || counts.size === 0) return term;
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || compareCodePoints(a[0], b[0]))[0]?.[0] ?? term;
+  return (
+    [...counts.entries()].sort((a, b) => b[1] - a[1] || compareCodePoints(a[0], b[0]))[0]?.[0] ??
+    term
+  );
 }
 
 function keyphrasesFor(
@@ -416,7 +518,8 @@ function keyphrasesFor(
     // whole point: corpus boilerplate is not what makes a document findable.
     const idf = Math.log((documentCount + 1) / (df + 1));
     if (idf <= 0) continue;
-    const weight = Math.round(weightedCount * idf * 10 ** WEIGHT_PRECISION) / 10 ** WEIGHT_PRECISION;
+    const weight =
+      Math.round(weightedCount * idf * 10 ** WEIGHT_PRECISION) / 10 ** WEIGHT_PRECISION;
     if (weight <= 0) continue;
     scored.push({
       normalized_term: term,
@@ -432,10 +535,7 @@ function keyphrasesFor(
   return scored.slice(0, MAX_KEYPHRASES_PER_ARTIFACT);
 }
 
-function featureViewFor(
-  prepared: PreparedArtifact,
-  keyphrases: Keyphrase[],
-): ArtifactFeatureView {
+function featureViewFor(prepared: PreparedArtifact, keyphrases: Keyphrase[]): ArtifactFeatureView {
   const artifact = prepared.input;
   const assertions = artifact.assertions ?? [];
   const declared = artifact.declared_identifiers ?? [];
@@ -465,10 +565,14 @@ function featureViewFor(
     normalized_heading_tokens: sortedUnique(prepared.fields.heading),
     keyphrases,
     normalized_reference_targets: sortedUnique(
-      byPredicate(REFERENCE_PREDICATE).map(normalizeReferenceTarget).filter((t) => t.length > 0),
+      byPredicate(REFERENCE_PREDICATE)
+        .map(normalizeReferenceTarget)
+        .filter((t) => t.length > 0),
     ),
     declared_project_identifiers: sortedUnique(
-      declared.map((entry) => normalizeForAnalysis(entry.identifier).trim()).filter((v) => v.length > 0),
+      declared
+        .map((entry) => normalizeForAnalysis(entry.identifier).trim())
+        .filter((v) => v.length > 0),
     ),
     declared_package_names: sortedUnique(
       declared
@@ -478,14 +582,20 @@ function featureViewFor(
     ),
     declared_service_names: [],
     declared_dependencies: sortedUnique(
-      byPredicate(DEPENDS_PREDICATE).map(normalizeReferenceTarget).filter((t) => t.length > 0),
+      byPredicate(DEPENDS_PREDICATE)
+        .map(normalizeReferenceTarget)
+        .filter((t) => t.length > 0),
     ),
 
-    statuses: sortedUnique(byPredicate(STATUS_PREDICATE).map((v) => normalizeForAnalysis(v).trim())),
+    statuses: sortedUnique(
+      byPredicate(STATUS_PREDICATE).map((v) => normalizeForAnalysis(v).trim()),
+    ),
     kinds: sortedUnique(byPredicate(KIND_PREDICATE).map((v) => normalizeForAnalysis(v).trim())),
     task_terms: [...taskTerms].sort(compareCodePoints),
     milestone_terms: [...milestoneTerms].sort(compareCodePoints),
-    blockers: sortedUnique(byPredicate(BLOCKED_PREDICATE).map((v) => normalizeForAnalysis(v).trim())),
+    blockers: sortedUnique(
+      byPredicate(BLOCKED_PREDICATE).map((v) => normalizeForAnalysis(v).trim()),
+    ),
     supersession_declarations: assertions
       .filter((a) => SUPERSESSION_PREDICATES.has(a.predicate))
       .map((a) => ({
@@ -494,9 +604,10 @@ function featureViewFor(
         assertion_id: a.assertion_id,
       }))
       .sort(
-        (a, b) => compareCodePoints(a.predicate, b.predicate)
-          || compareCodePoints(a.object, b.object)
-          || compareCodePoints(a.assertion_id, b.assertion_id),
+        (a, b) =>
+          compareCodePoints(a.predicate, b.predicate) ||
+          compareCodePoints(a.object, b.object) ||
+          compareCodePoints(a.assertion_id, b.assertion_id),
       ),
 
     archive_ancestry: [...(artifact.archive_ancestry ?? [])],
@@ -532,7 +643,8 @@ export function buildFeatureViews(
   return prepared
     .map((entry) => featureViewFor(entry, keyphrasesFor(entry, documentFrequency, prepared.length)))
     .sort(
-      (a, b) => compareCodePoints(a.corpus_path, b.corpus_path)
-        || compareCodePoints(a.artifact_id, b.artifact_id),
+      (a, b) =>
+        compareCodePoints(a.corpus_path, b.corpus_path) ||
+        compareCodePoints(a.artifact_id, b.artifact_id),
     );
 }

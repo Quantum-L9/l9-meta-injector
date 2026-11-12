@@ -1,7 +1,7 @@
 // OBS-005 / OBS-008: a read error must be surfaced, not silently reclassified as
 // "binary". fs primitives are non-configurable (spyOn fails), so mock the
 // module: openSync throws, everything else is the real implementation.
-import { vi, test, expect, beforeEach, afterEach, type MockInstance, type Mock } from "vitest";
+import { afterEach, beforeEach, expect, type Mock, type MockInstance, test, vi } from "vitest";
 
 vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
@@ -15,18 +15,28 @@ import { inventoryTree } from "../src/inventory";
 import { findFiles } from "../src/retrieval";
 
 const actual = await vi.importActual<typeof import("fs")>("fs");
-function tmp() { return actual.mkdtempSync(path.join(os.tmpdir(), "l9-rderr-")); }
+function tmp() {
+  return actual.mkdtempSync(path.join(os.tmpdir(), "l9-rderr-"));
+}
 
 let stderr: MockInstance;
-beforeEach(() => { stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true); });
-afterEach(() => { (fs.openSync as unknown as Mock).mockImplementation(actual.openSync); vi.restoreAllMocks(); });
+beforeEach(() => {
+  stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+});
+afterEach(() => {
+  (fs.openSync as unknown as Mock).mockImplementation(actual.openSync);
+  vi.restoreAllMocks();
+});
 
 test("inventory records read_failed, distinct from a binary skip (OBS-005)", () => {
-  const root = tmp(); actual.writeFileSync(path.join(root, "note.md"), "# note\nbody text\n");
-  (fs.openSync as unknown as Mock).mockImplementation((...args: Parameters<typeof actual.openSync>) => {
-    if (String(args[0]) === path.join(root, "note.md")) throw new Error("EACCES: cannot open");
-    return actual.openSync(...args);
-  });
+  const root = tmp();
+  actual.writeFileSync(path.join(root, "note.md"), "# note\nbody text\n");
+  (fs.openSync as unknown as Mock).mockImplementation(
+    (...args: Parameters<typeof actual.openSync>) => {
+      if (String(args[0]) === path.join(root, "note.md")) throw new Error("EACCES: cannot open");
+      return actual.openSync(...args);
+    },
+  );
   const r = inventoryTree({ root, outDir: tmp(), dryRun: false, now: "2026-01-01T00:00:00.000Z" });
   const rec = r.records.find((x) => x.file_name === "note.md")!;
   expect(rec.unknowns.some((u) => u.startsWith("read_failed:"))).toBe(true);
@@ -48,7 +58,9 @@ test("retrieval excludes an unreadable file and reports it, whatever its extensi
   const root = tmp();
   actual.writeFileSync(path.join(root, "data.xyz"), "plain text content\n");
   actual.writeFileSync(path.join(root, "keep.md"), "# keep\n");
-  (fs.openSync as unknown as Mock).mockImplementation(() => { throw new Error("EACCES: unreadable"); });
+  (fs.openSync as unknown as Mock).mockImplementation(() => {
+    throw new Error("EACCES: unreadable");
+  });
 
   const files = findFiles(root, "**/*");
 

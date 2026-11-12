@@ -5,9 +5,9 @@
  * Every discovered path receives one policy decision before later workstreams
  * decide how to materialize a central manifest or an inline managed patch.
  */
-import type { ArtifactType } from "./schema";
+import type { TrackedCarrierDecision, TrackedGitEntry } from "./discovery_contracts";
 import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
-import type { TrackedGitEntry, TrackedCarrierDecision } from "./discovery_contracts";
+import type { ArtifactType } from "./schema";
 export declare const CARRIER_PRECEDENCE: readonly MetadataCarrier[];
 export declare const INLINE_MANAGED_ARTIFACT_TYPES: Set<ArtifactType>;
 export type CarrierInjectionStrategy = "yaml-frontmatter" | "line-comment" | "block-comment" | "sidecar" | "skip-binary";

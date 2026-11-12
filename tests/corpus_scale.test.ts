@@ -77,10 +77,10 @@ describe("a ten-thousand-artifact corpus", () => {
     expect(cold.snapshot.counts.artifact_count).toBeGreaterThanOrEqual(SPEC.artifacts);
     // Every top-level archive, every nested one, and every archive found inside a
     // nested one: nesting is observed at depth rather than stopped at the surface.
-    expect(cold.snapshot.counts.archive_count)
-      .toBe(SPEC.archives + SPEC.nestedArchives * 2);
-    expect(cold.snapshot.counts.archive_member_count)
-      .toBe(corpus.archiveMembers + corpus.nestedArchiveMembers);
+    expect(cold.snapshot.counts.archive_count).toBe(SPEC.archives + SPEC.nestedArchives * 2);
+    expect(cold.snapshot.counts.archive_member_count).toBe(
+      corpus.archiveMembers + corpus.nestedArchiveMembers,
+    );
     expect(cold.coverage.exact_hash_coverage.ratio).toBe(1);
     expect(cold.snapshot.counts.root_count).toBe(3);
     expect(cold.snapshot.corpus_status).toBe("complete");
@@ -92,18 +92,21 @@ describe("a ten-thousand-artifact corpus", () => {
     // The duplicate payloads were written into more than one root, so each of
     // their clusters spans a boundary. The archives add more: every archive holds
     // the same `notes/shared.md`.
-    expect(cold.candidates.summary.exact_duplicate_cluster_count)
-      .toBeGreaterThanOrEqual(SPEC.duplicateClusters + 1);
-    expect(cold.candidates.summary.cross_root_duplicate_cluster_count)
-      .toBeGreaterThanOrEqual(SPEC.duplicateClusters + 1);
+    expect(cold.candidates.summary.exact_duplicate_cluster_count).toBeGreaterThanOrEqual(
+      SPEC.duplicateClusters + 1,
+    );
+    expect(cold.candidates.summary.cross_root_duplicate_cluster_count).toBeGreaterThanOrEqual(
+      SPEC.duplicateClusters + 1,
+    );
 
     // Every project declares a name in its manifest, so every one of them is a
     // declared-identifier body of work rather than a directory-name guess.
     const declared = cold.candidates.project_candidates.filter((c) => c.identifier_is_declared);
     expect(declared).toHaveLength(SPEC.candidateProjects);
     expect(cold.coverage.semantics.project_candidate_count).toBe(SPEC.candidateProjects);
-    expect(cold.coverage.reasoning_handoff.reasoning_eligible_candidate_count)
-      .toBe(SPEC.candidateProjects);
+    expect(cold.coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(
+      SPEC.candidateProjects,
+    );
     expect(cold.readiness.bodies_of_work).toHaveLength(SPEC.candidateProjects);
     for (const body of cold.readiness.bodies_of_work) {
       expect(body.origin).toBe("explicit_project_identifier");
@@ -150,8 +153,9 @@ describe("a ten-thousand-artifact corpus", () => {
       expect(byFormat.get(format)?.decoded_count).toBe(SPEC.mixedDocumentsPerFormat);
       // The count this closure exists to move off zero: decoded *and* found to
       // have said something, per format, at scale.
-      expect(byFormat.get(format)?.interpreted_count, `${format} interpreted`)
-        .toBe(SPEC.mixedDocumentsPerFormat);
+      expect(byFormat.get(format)?.interpreted_count, `${format} interpreted`).toBe(
+        SPEC.mixedDocumentsPerFormat,
+      );
     }
 
     // Every decoder that ran is named with the format it read, rather than the
@@ -169,8 +173,15 @@ describe("a ten-thousand-artifact corpus", () => {
     // binary format, each citing a coordinate that is not a line number.
     const evidence = cold.documentSignals.block_signals;
     expect(evidence.signal_count).toBeGreaterThan(SPEC.mixedDocumentsPerFormat * 5);
-    expect(evidence.by_format.map((entry) => entry.format).sort())
-      .toEqual(["csv", "docx", "html", "ipynb", "pdf", "pptx", "xlsx"]);
+    expect(evidence.by_format.map((entry) => entry.format).sort()).toEqual([
+      "csv",
+      "docx",
+      "html",
+      "ipynb",
+      "pdf",
+      "pptx",
+      "xlsx",
+    ]);
     for (const entry of evidence.by_format) {
       for (const record of entry.records) {
         expect(record.structured_locator.kind).not.toBe("line_span");

@@ -11,8 +11,8 @@ import {
   withLocalSourceModel,
   writeLocalSourceManifest,
 } from "../src/local_source_model";
-import { validateRepositoryModelPacket } from "../src/repository_model";
 import type { RepositoryModelPacket } from "../src/repository_model";
+import { validateRepositoryModelPacket } from "../src/repository_model";
 import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
@@ -54,7 +54,9 @@ describe("archive provenance in the packet", () => {
       "outer.zip!/inner.zip!/src/b.py",
     ]);
 
-    const byId = new Map(packet.payload.artifacts.map((artifact) => [artifact.artifact_id, artifact]));
+    const byId = new Map(
+      packet.payload.artifacts.map((artifact) => [artifact.artifact_id, artifact]),
+    );
     // Relationships are ordered by edge id (a digest), so the assertion sorts by
     // the member path it is actually about.
     const derived = packet.payload.relationships
@@ -85,15 +87,18 @@ describe("archive provenance in the packet", () => {
     const root = tmp();
     nestedFixture(root);
     const packet = packetFor(root);
-    const edge = packet.payload.relationships.find((relationship) =>
-      relationship.edge_type === "DERIVED_FROM"
-      && relationship.properties.member_path === "src/b.py");
+    const edge = packet.payload.relationships.find(
+      (relationship) =>
+        relationship.edge_type === "DERIVED_FROM" &&
+        relationship.properties.member_path === "src/b.py",
+    );
     expect(edge).toBeDefined();
     expect(edge?.properties.archive_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(edge?.properties.member_id).toMatch(/^member:[a-f0-9]{64}$/);
 
-    const evidence = packet.payload.evidence.find((record) =>
-      record.evidence_id === edge?.evidence_refs[0]);
+    const evidence = packet.payload.evidence.find(
+      (record) => record.evidence_id === edge?.evidence_refs[0],
+    );
     expect(evidence?.field).toBe("derived_from");
     expect(evidence?.source_ref.source_path).toBe("outer.zip!/inner.zip!/src/b.py");
     expect(evidence?.source_ref.content_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -129,8 +134,12 @@ describe("archive provenance in the packet", () => {
     writeRawZip(path.join(root, "Evil.zip"), [{ name: "../escape.txt", content: "no" }]);
     const packet = packetFor(root);
     expect(packet.payload.artifacts.map((artifact) => artifact.source_path)).toEqual(["Evil.zip"]);
-    expect(packet.payload.diagnostics.some((diagnostic) => diagnostic.code === "archive-held")).toBe(true);
-    expect(packet.payload.relationships.some((edge) => edge.edge_type === "DERIVED_FROM")).toBe(false);
+    expect(
+      packet.payload.diagnostics.some((diagnostic) => diagnostic.code === "archive-held"),
+    ).toBe(true);
+    expect(packet.payload.relationships.some((edge) => edge.edge_type === "DERIVED_FROM")).toBe(
+      false,
+    );
   });
 });
 
@@ -166,8 +175,10 @@ describe("local-source packet identity", () => {
       (result) => result.packet,
     );
     expect(packet.source_snapshot.revision).toMatch(/^archive:sha256:[a-f0-9]{64}$/);
-    expect(packet.payload.artifacts.map((artifact) => artifact.source_path))
-      .toEqual(["Bundle.zip", "Bundle.zip!/a.md"]);
+    expect(packet.payload.artifacts.map((artifact) => artifact.source_path)).toEqual([
+      "Bundle.zip",
+      "Bundle.zip!/a.md",
+    ]);
   });
 
   test("identical bytes at a different absolute path yield an identical packet", () => {
@@ -198,9 +209,7 @@ describe("local-source packet identity", () => {
     writeRawZip(path.join(root, "Bundle.zip"), [{ name: "a.md", content: "# A\n" }]);
     const first = packetFor(root);
     // Same member semantics, different archive bytes.
-    writeRawZip(path.join(root, "Bundle.zip"), [
-      { name: "a.md", content: "# A\n", stored: true },
-    ]);
+    writeRawZip(path.join(root, "Bundle.zip"), [{ name: "a.md", content: "# A\n", stored: true }]);
     const second = packetFor(root);
     expect(second.source_snapshot.revision).not.toBe(first.source_snapshot.revision);
     const memberHash = (packet: RepositoryModelPacket): string | undefined =>
@@ -212,48 +221,60 @@ describe("local-source packet identity", () => {
   test("an unstable observation refuses to produce a packet", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
-    expect(() => observeLocalSourceModel({
-      path: root,
-      producerVersion: PRODUCER_VERSION,
-      omit: {
-        patterns: [],
-        shouldOmit(relative: string): boolean {
-          if (relative === "a.md" && !fs.existsSync(path.join(root, "late.md"))) {
-            fs.writeFileSync(path.join(root, "late.md"), "# Late\n");
-          }
-          return false;
+    expect(() =>
+      observeLocalSourceModel({
+        path: root,
+        producerVersion: PRODUCER_VERSION,
+        omit: {
+          patterns: [],
+          shouldOmit(relative: string): boolean {
+            if (relative === "a.md" && !fs.existsSync(path.join(root, "late.md"))) {
+              fs.writeFileSync(path.join(root, "late.md"), "# Late\n");
+            }
+            return false;
+          },
         },
-      },
-    })).toThrow(/SOURCE_CHANGED_DURING_OBSERVATION/);
+      }),
+    ).toThrow(/SOURCE_CHANGED_DURING_OBSERVATION/);
   });
 
   test("a missing required content hash blocks the canonical packet", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "big.md"), "x".repeat(4096));
-    expect(() => observeLocalSourceModel({
-      path: root,
-      producerVersion: PRODUCER_VERSION,
-      hashMaxBytes: 64,
-    })).toThrow(/required content hash is missing/);
+    expect(() =>
+      observeLocalSourceModel({
+        path: root,
+        producerVersion: PRODUCER_VERSION,
+        hashMaxBytes: 64,
+      }),
+    ).toThrow(/required content hash is missing/);
   });
 });
 
 describe("encoding safety", () => {
   function encodingFixture(root: string): void {
     fs.writeFileSync(path.join(root, "utf8.md"), "# Café\n\nplain UTF-8\n");
-    fs.writeFileSync(path.join(root, "bom.md"), Buffer.concat([
-      Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("# BOM\n\nwith byte-order mark\n", "utf8"),
-    ]));
+    fs.writeFileSync(
+      path.join(root, "bom.md"),
+      Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from("# BOM\n\nwith byte-order mark\n", "utf8"),
+      ]),
+    );
     // A Windows-1252 file whose first bytes are ASCII: a prefix probe would pass
     // it. Named README.md so an extractor claims it and the refusal is observable
     // in the interpretation diagnostics rather than only in acquisition.
-    fs.writeFileSync(path.join(root, "README.md"), Buffer.concat([
-      Buffer.from("# Heading\n\nStatus: active\n\n".repeat(10), "utf8"),
-      Buffer.from([0x93, 0x63, 0x75, 0x72, 0x6c, 0x79, 0x94, 0x0a]),
-    ]));
-    fs.writeFileSync(path.join(root, "invalid.py"), Buffer.from([
-      0x70, 0x72, 0x69, 0x6e, 0x74, 0x28, 0x27, 0xff, 0xfe, 0x27, 0x29, 0x0a,
-    ]));
+    fs.writeFileSync(
+      path.join(root, "README.md"),
+      Buffer.concat([
+        Buffer.from("# Heading\n\nStatus: active\n\n".repeat(10), "utf8"),
+        Buffer.from([0x93, 0x63, 0x75, 0x72, 0x6c, 0x79, 0x94, 0x0a]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(root, "invalid.py"),
+      Buffer.from([0x70, 0x72, 0x69, 0x6e, 0x74, 0x28, 0x27, 0xff, 0xfe, 0x27, 0x29, 0x0a]),
+    );
     fs.writeFileSync(path.join(root, "binary.txt"), Buffer.from([0x00, 0x01, 0x02, 0xff]));
   }
 
@@ -287,7 +308,9 @@ describe("encoding safety", () => {
     // A known-text extension does not buy an interpretation pass. README.md, the
     // .py and the .txt are all claimed by extractors, and all three are refused
     // on their bytes rather than on their names.
-    const interpretedPaths = new Set(result.interpretation?.assertions.map((a) => a.source_path) ?? []);
+    const interpretedPaths = new Set(
+      result.interpretation?.assertions.map((a) => a.source_path) ?? [],
+    );
     expect(interpretedPaths.has("README.md")).toBe(false);
     expect(interpretedPaths.has("invalid.py")).toBe(false);
     expect(interpretedPaths.has("binary.txt")).toBe(false);
@@ -317,7 +340,10 @@ describe("secret safety", () => {
     const root = tmp();
     writeRawZip(path.join(root, "Secrets.zip"), [
       { name: ".env", content: "API_KEY=sk-live-0123456789abcdefghij\n" },
-      { name: "secrets.pem", content: "-----BEGIN RSA PRIVATE KEY-----\nMIIEabcdefgh\n-----END RSA PRIVATE KEY-----\n" },
+      {
+        name: "secrets.pem",
+        content: "-----BEGIN RSA PRIVATE KEY-----\nMIIEabcdefgh\n-----END RSA PRIVATE KEY-----\n",
+      },
       { name: "app.json", content: '{"name":"app","version":"1.0.0"}\n' },
     ]);
 
@@ -336,7 +362,9 @@ describe("secret safety", () => {
     expect(serialized).not.toContain("BEGIN RSA PRIVATE KEY");
     expect(serialized).not.toContain("MIIEabcdefgh");
 
-    const excerpts = result.packet.payload.assertions.map((assertion) => assertion.evidence_excerpt);
+    const excerpts = result.packet.payload.assertions.map(
+      (assertion) => assertion.evidence_excerpt,
+    );
     expect(excerpts.some((excerpt) => excerpt.includes("sk-live"))).toBe(false);
     for (const assertion of result.packet.payload.assertions) {
       expect(assertion.source_path).not.toContain(".env");
@@ -351,7 +379,9 @@ describe("secret safety", () => {
     ]);
     const observation = acquireLocalSource({ path: root });
     try {
-      const manifest = buildLocalSourceManifest(observation, { observedAt: "2026-01-01T00:00:00.000Z" });
+      const manifest = buildLocalSourceManifest(observation, {
+        observedAt: "2026-01-01T00:00:00.000Z",
+      });
       const serialized = JSON.stringify(manifest);
       expect(serialized).not.toContain("sk-live-0123456789abcdefghij");
       expect(manifest.source_mutated).toBe(false);
@@ -370,14 +400,22 @@ describe("acquisition manifest placement", () => {
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
     const observation = acquireLocalSource({ path: root });
     try {
-      const manifest = buildLocalSourceManifest(observation, { observedAt: "2026-01-01T00:00:00.000Z" });
-      expect(() => writeLocalSourceManifest(manifest, path.join(root, "manifest.json"), root))
-        .toThrow(/refusing to write the acquisition manifest inside the observed source tree/);
-      expect(() => writeLocalSourceManifest(manifest, path.join(root, "deep", "manifest.json"), root))
-        .toThrow(/refusing to write/);
+      const manifest = buildLocalSourceManifest(observation, {
+        observedAt: "2026-01-01T00:00:00.000Z",
+      });
+      expect(() =>
+        writeLocalSourceManifest(manifest, path.join(root, "manifest.json"), root),
+      ).toThrow(/refusing to write the acquisition manifest inside the observed source tree/);
+      expect(() =>
+        writeLocalSourceManifest(manifest, path.join(root, "deep", "manifest.json"), root),
+      ).toThrow(/refusing to write/);
 
       const out = tmp();
-      const written = writeLocalSourceManifest(manifest, path.join(out, "local-source-manifest.json"), root);
+      const written = writeLocalSourceManifest(
+        manifest,
+        path.join(out, "local-source-manifest.json"),
+        root,
+      );
       expect(fs.existsSync(written)).toBe(true);
       expect(fs.readdirSync(root)).toEqual(["a.md"]);
     } finally {
@@ -389,11 +427,21 @@ describe("acquisition manifest placement", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
     const first = withLocalSourceModel(
-      { path: root, name: "fixture", producerVersion: PRODUCER_VERSION, generatedAt: "2020-01-01T00:00:00.000Z" },
+      {
+        path: root,
+        name: "fixture",
+        producerVersion: PRODUCER_VERSION,
+        generatedAt: "2020-01-01T00:00:00.000Z",
+      },
       (result) => result.packet,
     );
     const second = withLocalSourceModel(
-      { path: root, name: "fixture", producerVersion: PRODUCER_VERSION, generatedAt: "2031-06-06T12:00:00.000Z" },
+      {
+        path: root,
+        name: "fixture",
+        producerVersion: PRODUCER_VERSION,
+        generatedAt: "2031-06-06T12:00:00.000Z",
+      },
       (result) => result.packet,
     );
     expect(second.semantic_hash).toBe(first.semantic_hash);

@@ -9,6 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { afterAll, describe, expect, it } from "vitest";
+import { runCorpusScan } from "../src/corpus_scan";
 import {
   DEFAULT_DECODER_BUDGET,
   DecodeInput,
@@ -17,16 +18,15 @@ import {
   pdfDecoder,
   pdfInternals,
 } from "../src/documents";
-import { runCorpusScan } from "../src/corpus_scan";
 import {
-  PdfFixtureObject,
-  FixtureFont,
   buildPdf,
   cmapProgram,
+  FixtureFont,
   flateStreamObject,
   fontPagePdf,
   multiPagePdf,
   objectStreamObject,
+  PdfFixtureObject,
   plainStreamObject,
   textContent,
   writeBytes,
@@ -133,33 +133,46 @@ describe("WU-057 the PDF decoder's resource bounds", () => {
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(["Roadmap: ship Q3"]);
-    const budget = outcome.document.diagnostics.filter((entry) => entry.code === "decoder.budget_exceeded");
+    const budget = outcome.document.diagnostics.filter(
+      (entry) => entry.code === "decoder.budget_exceeded",
+    );
     expect(budget).toHaveLength(1);
     expect(budget[0]?.severity).toBe("warning");
     expect(budget[0]?.part).toBe("object 7");
-    expect(outcome.document.diagnostics.some((entry) => entry.code === "decoder.ocr_required")).toBe(false);
+    expect(
+      outcome.document.diagnostics.some((entry) => entry.code === "decoder.ocr_required"),
+    ).toBe(false);
   });
 
   it("REG-WU-057-RC-114-114-c: stops inflating at the document's aggregate allowance", () => {
     // Twelve streams of 600 KiB each: every one is under the 1 MiB per-stream
     // ceiling, and together they are far over the 4 MiB document allowance.
-    const pages = [textContent(["Plan of record"]), ...Array.from({ length: 12 }, () => bombPage(600 * 1024))];
+    const pages = [
+      textContent(["Plan of record"]),
+      ...Array.from({ length: 12 }, () => bombPage(600 * 1024)),
+    ];
     const outcome = decodePdf(multiPagePdf(pages), SMALL_STREAMS);
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(["Plan of record"]);
-    const allowance = outcome.document.diagnostics.find((entry) =>
-      entry.code === "decoder.budget_exceeded" && entry.message.includes("allowance"));
+    const allowance = outcome.document.diagnostics.find(
+      (entry) => entry.code === "decoder.budget_exceeded" && entry.message.includes("allowance"),
+    );
     expect(allowance?.message).toContain(`allowance of ${4 * MiB} bytes was exhausted`);
     // 4 MiB of allowance covers six 600 KiB streams; the rest were never inflated.
-    const skipped = Number(/(\d+) stream\(s\) were not inflated/.exec(allowance?.message ?? "")?.[1]);
+    const skipped = Number(
+      /(\d+) stream\(s\) were not inflated/.exec(allowance?.message ?? "")?.[1],
+    );
     expect(skipped).toBeGreaterThanOrEqual(5);
   });
 
   it("REG-WU-057-RC-114-114-d: decodes a legitimate multi-megabyte content stream in full", () => {
     // Varied text, so it compresses like prose rather than like a bomb.
-    const lines = Array.from({ length: 42_000 }, (_, index) =>
-      `Line ${index} records milestone ${(index * 7919) % 100_003} for workstream ${(index * 104_729) % 9973} as planned`);
+    const lines = Array.from(
+      { length: 42_000 },
+      (_, index) =>
+        `Line ${index} records milestone ${(index * 7919) % 100_003} for workstream ${(index * 104_729) % 9973} as planned`,
+    );
     const content = textContent(lines);
     expect(content.length).toBeGreaterThan(3 * MiB);
     const outcome = decodePdf(multiPagePdf([content]));
@@ -167,8 +180,12 @@ describe("WU-057 the PDF decoder's resource bounds", () => {
     if (!outcome.decoded) return;
     expect(outcome.document.blocks).toHaveLength(lines.length);
     expect(texts(outcome).at(-1)).toBe(lines.at(-1));
-    expect(outcome.document.diagnostics.some((entry) => entry.code === "decoder.budget_exceeded")).toBe(false);
-    expect(outcome.document.diagnostics.some((entry) => entry.code === "decoder.truncated")).toBe(false);
+    expect(
+      outcome.document.diagnostics.some((entry) => entry.code === "decoder.budget_exceeded"),
+    ).toBe(false);
+    expect(outcome.document.diagnostics.some((entry) => entry.code === "decoder.truncated")).toBe(
+      false,
+    );
   });
 
   it("REG-WU-057-RC-114-114-e: still treats a corrupt Flate stream as unreadable, not over budget", () => {
@@ -183,7 +200,9 @@ describe("WU-057 the PDF decoder's resource bounds", () => {
     expect(outcome.decoded).toBe(false);
     if (outcome.decoded) return;
     expect(outcome.reason).toBe("decoder.unsupported_feature");
-    expect(outcome.diagnostics.some((entry) => entry.code === "decoder.budget_exceeded")).toBe(false);
+    expect(outcome.diagnostics.some((entry) => entry.code === "decoder.budget_exceeded")).toBe(
+      false,
+    );
   });
 
   it("REG-WU-057-RC-114-114-f: stores 300 full-width bfrange rows as ranges, quickly and without throwing", () => {
@@ -247,7 +266,9 @@ describe("WU-057 the PDF decoder's resource bounds", () => {
   });
 
   it("REG-WU-057-RC-114-114-h: decodes a 4,000-page PDF in time linear in its size", () => {
-    const pages = Array.from({ length: 4000 }, (_, index) => textContent([`Page ${index + 1} body`]));
+    const pages = Array.from({ length: 4000 }, (_, index) =>
+      textContent([`Page ${index + 1} body`]),
+    );
     const bytes = multiPagePdf(pages);
     expect(bytes.length).toBeGreaterThan(500_000);
 
@@ -267,7 +288,11 @@ describe("WU-057 the PDF decoder's resource bounds", () => {
     const bomb = multiPagePdf([bombPage(40 * MiB)]);
     expect(bomb.length).toBeLessThan(64 * 1024);
     writeBytes(path.join(root, "bomb.pdf"), bomb);
-    fs.writeFileSync(path.join(root, "notes.md"), "# Notes\n\nThe migration ships in Q3.\n", "utf8");
+    fs.writeFileSync(
+      path.join(root, "notes.md"),
+      "# Notes\n\nThe migration ships in Q3.\n",
+      "utf8",
+    );
 
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
 
@@ -318,10 +343,16 @@ function contentWithLength(length: string): PdfFixtureObject {
 
 function indirectLengthPdf(lengthObject: string | null, options: { image?: boolean } = {}): Buffer {
   const content = contentWithLength("6 0 R");
-  const objects = onePageObjects(content, options.image === true ? " /XObject << /Im1 7 0 R >>" : "");
+  const objects = onePageObjects(
+    content,
+    options.image === true ? " /XObject << /Im1 7 0 R >>" : "",
+  );
   const compressed = content.stream as Buffer;
   if (lengthObject !== null) {
-    objects.push({ number: 6, body: lengthObject === "__REAL__" ? String(compressed.length) : lengthObject });
+    objects.push({
+      number: 6,
+      body: lengthObject === "__REAL__" ? String(compressed.length) : lengthObject,
+    });
   }
   if (options.image === true) {
     objects.push({
@@ -351,7 +382,9 @@ function titledPdf(info: string | null, outlineTitle = "(Appendix C: Glossary)")
     { number: 7, body: `<< /Title ${outlineTitle} /Parent 6 0 R /Dest [3 0 R /Fit] >>` },
   ];
   if (info !== null) objects.push({ number: 8, body: `<< /Title ${info} >>` });
-  return buildPdf(objects, { trailer: `/Size 9 /Root 1 0 R${info !== null ? " /Info 8 0 R" : ""}` });
+  return buildPdf(objects, {
+    trailer: `/Size 9 /Root 1 0 R${info !== null ? " /Info 8 0 R" : ""}`,
+  });
 }
 
 function titleOf(outcome: DecodeOutcome): string | undefined {
@@ -370,11 +403,15 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(STATUS_LINES);
-    expect(outcome.document.diagnostics.some((entry) => entry.code === "decoder.ocr_required")).toBe(false);
+    expect(
+      outcome.document.diagnostics.some((entry) => entry.code === "decoder.ocr_required"),
+    ).toBe(false);
   });
 
   it("REG-WU-058-RC-112-112-c: a /Length naming a missing object falls back to the endstream scan", () => {
-    const outcome = decodePdf(buildPdf(onePageObjects(contentWithLength("99 0 R")), { trailer: "/Size 6 /Root 1 0 R" }));
+    const outcome = decodePdf(
+      buildPdf(onePageObjects(contentWithLength("99 0 R")), { trailer: "/Size 6 /Root 1 0 R" }),
+    );
     expect(outcome.decoded).toBe(true);
     expect(texts(outcome)).toEqual(STATUS_LINES);
   });
@@ -404,7 +441,11 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
           body: "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /Length __LENGTH__ >>",
           stream: Buffer.from([0x80]),
         },
-        { number: 7, body: "<< /Type /XRef /Size 9 /Root 1 0 R /W [1 2 1] /Length __LENGTH__ >>", stream: Buffer.alloc(0) },
+        {
+          number: 7,
+          body: "<< /Type /XRef /Size 9 /Root 1 0 R /W [1 2 1] /Length __LENGTH__ >>",
+          stream: Buffer.alloc(0),
+        },
       ],
       { trailer: null, version: "1.5" },
     );
@@ -416,12 +457,18 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
     // as a later top-level definition would.
     const updated = buildPdf(
       [
-        objectStreamObject(9, [{
-          number: 3,
-          body: "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 10 0 R >>",
-        }]),
+        objectStreamObject(9, [
+          {
+            number: 3,
+            body: "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 10 0 R >>",
+          },
+        ]),
         flateStreamObject(10, textContent(["Roadmap: ship Q4"])),
-        { number: 11, body: "<< /Type /XRef /Size 12 /Root 1 0 R /Prev 0 /W [1 2 1] /Length __LENGTH__ >>", stream: Buffer.alloc(0) },
+        {
+          number: 11,
+          body: "<< /Type /XRef /Size 12 /Root 1 0 R /Prev 0 /W [1 2 1] /Length __LENGTH__ >>",
+          stream: Buffer.alloc(0),
+        },
       ],
       { trailer: null, base },
     );
@@ -449,12 +496,17 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
   });
 
   it("REG-WU-058-RC-112-112-g: page numbers follow the page tree after an incremental update", () => {
-    const base = multiPagePdf([textContent(["First page text"]), textContent(["Second page text"])]);
+    const base = multiPagePdf([
+      textContent(["First page text"]),
+      textContent(["Second page text"]),
+    ]);
     const updated = buildPdf(
-      [{
-        number: 4,
-        body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
-      }],
+      [
+        {
+          number: 4,
+          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+        },
+      ],
       { trailer: "/Size 8 /Root 1 0 R /Prev 0", base },
     );
     expect(pageNumbers(decodePdf(updated))).toEqual([
@@ -464,11 +516,14 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
   });
 
   it("REG-WU-058-RC-112-112-h: a page removed from /Kids is no longer read", () => {
-    const base = multiPagePdf([textContent(["First page text"]), textContent(["Second page text"])]);
-    const updated = buildPdf(
-      [{ number: 2, body: "<< /Type /Pages /Kids [4 0 R] /Count 1 >>" }],
-      { trailer: "/Size 8 /Root 1 0 R /Prev 0", base },
-    );
+    const base = multiPagePdf([
+      textContent(["First page text"]),
+      textContent(["Second page text"]),
+    ]);
+    const updated = buildPdf([{ number: 2, body: "<< /Type /Pages /Kids [4 0 R] /Count 1 >>" }], {
+      trailer: "/Size 8 /Root 1 0 R /Prev 0",
+      base,
+    });
     const outcome = decodePdf(updated);
     expect(texts(outcome)).toEqual(["First page text"]);
     expect(texts(outcome)).not.toContain("Second page text");
@@ -479,7 +534,10 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
     // Pages nodes 20..27 nest eight levels below the root; the page under them
     // is past a four-level ceiling.
     for (let level = 0; level < 8; level += 1) {
-      deepChain.push({ number: 20 + level, body: `<< /Type /Pages /Kids [${21 + level} 0 R] /Count 1 >>` });
+      deepChain.push({
+        number: 20 + level,
+        body: `<< /Type /Pages /Kids [${21 + level} 0 R] /Count 1 >>`,
+      });
     }
     deepChain.push({
       number: 28,
@@ -517,7 +575,9 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(["Orphan page"]);
-    const note = outcome.document.diagnostics.find((entry) => entry.message.includes("page tree could not be resolved"));
+    const note = outcome.document.diagnostics.find((entry) =>
+      entry.message.includes("page tree could not be resolved"),
+    );
     expect(note?.code).toBe("decoder.malformed");
   });
 
@@ -526,10 +586,15 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
   });
 
   it("REG-WU-058-RC-112-112-l: a UTF-16BE title decodes, as a literal or a hex string", () => {
-    const utf16 = Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from("Q3 Plan", "utf16le").swap16()]);
+    const utf16 = Buffer.concat([
+      Buffer.from([0xfe, 0xff]),
+      Buffer.from("Q3 Plan", "utf16le").swap16(),
+    ]);
     const octal = [...utf16].map((byte) => `\\${byte.toString(8).padStart(3, "0")}`).join("");
     expect(titleOf(decodePdf(titledPdf(`(${octal})`)))).toBe("Q3 Plan");
-    expect(titleOf(decodePdf(titledPdf(`<${utf16.toString("hex").toUpperCase()}>`)))).toBe("Q3 Plan");
+    expect(titleOf(decodePdf(titledPdf(`<${utf16.toString("hex").toUpperCase()}>`)))).toBe(
+      "Q3 Plan",
+    );
   });
 
   it("REG-WU-058-RC-112-112-m: escaped parentheses do not cut the title short", () => {
@@ -545,11 +610,13 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
 
   it("REG-WU-058-RC-112-112-o: the repository's PDF fixtures decode as their existing tests require", () => {
     const dir = tmp();
-    const native = decodePdf(fs.readFileSync(writePdf(
-      path.join(dir, "research.pdf"),
-      ["Temporal Knowledge Graphs", "Status: WIP"],
-      { title: "Temporal Knowledge Graphs" },
-    )));
+    const native = decodePdf(
+      fs.readFileSync(
+        writePdf(path.join(dir, "research.pdf"), ["Temporal Knowledge Graphs", "Status: WIP"], {
+          title: "Temporal Knowledge Graphs",
+        }),
+      ),
+    );
     expect(titleOf(native)).toBe("Temporal Knowledge Graphs");
     expect(texts(native)).toEqual(["Temporal Knowledge Graphs", "Status: WIP"]);
     const scan = decodePdf(fs.readFileSync(writeScannedPdf(path.join(dir, "scan.pdf"))));
@@ -597,15 +664,21 @@ function hasControlCharacters(outcome: DecodeOutcome): boolean {
 
 describe("WU-059 per-font ToUnicode decoding", () => {
   it("REG-WU-059-RC-113-113-a: a Flate-compressed ToUnicode CMap is read through its own filter", () => {
-    const outcome = decodePdf(fontPagePdf([cidFont("F1", OK_ROWS, true)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"));
+    const outcome = decodePdf(
+      fontPagePdf([cidFont("F1", OK_ROWS, true)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"),
+    );
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(["OK!"]);
-    expect(outcome.document.diagnostics.some((entry) => entry.message.includes("no ToUnicode map"))).toBe(false);
+    expect(
+      outcome.document.diagnostics.some((entry) => entry.message.includes("no ToUnicode map")),
+    ).toBe(false);
   });
 
   it("REG-WU-059-RC-113-113-b: the same CMap uncompressed still reads", () => {
-    const outcome = decodePdf(fontPagePdf([cidFont("F1", OK_ROWS, false)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"));
+    const outcome = decodePdf(
+      fontPagePdf([cidFont("F1", OK_ROWS, false)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"),
+    );
     expect(texts(outcome)).toEqual(["OK!"]);
   });
 
@@ -626,28 +699,35 @@ describe("WU-059 per-font ToUnicode decoding", () => {
   });
 
   it("REG-WU-059-RC-113-113-e: a composite font with no usable map yields no glyph IDs as text", () => {
-    const only = decodePdf(fontPagePdf([cidFont("F1", null)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"));
+    const only = decodePdf(
+      fontPagePdf([cidFont("F1", null)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"),
+    );
     expect(only.decoded).toBe(false);
     if (only.decoded) return;
     expect(only.reason).toBe("decoder.unsupported_feature");
     expect(hasControlCharacters(only)).toBe(false);
 
-    const dangling = decodePdf(fontPagePdf(
-      [{ ...cidFont("F1", null), toUnicodeValue: "99 0 R" }],
-      "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET",
-    ));
+    const dangling = decodePdf(
+      fontPagePdf(
+        [{ ...cidFont("F1", null), toUnicodeValue: "99 0 R" }],
+        "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET",
+      ),
+    );
     expect(dangling.decoded ? "decoded" : dangling.reason).toBe("decoder.unsupported_feature");
 
-    const mixed = decodePdf(fontPagePdf(
-      [cidFont("F1", null), HELVETICA],
-      "BT /F1 12 Tf 72 720 Td <000300040005> Tj 0 -18 Td /F2 12 Tf (Readable line) Tj ET",
-    ));
+    const mixed = decodePdf(
+      fontPagePdf(
+        [cidFont("F1", null), HELVETICA],
+        "BT /F1 12 Tf 72 720 Td <000300040005> Tj 0 -18 Td /F2 12 Tf (Readable line) Tj ET",
+      ),
+    );
     expect(mixed.decoded).toBe(true);
     if (!mixed.decoded) return;
     expect(texts(mixed)).toEqual(["Readable line"]);
     expect(hasControlCharacters(mixed)).toBe(false);
-    const warning = mixed.document.diagnostics.find((entry) =>
-      entry.code === "decoder.unsupported_feature" && entry.severity === "warning");
+    const warning = mixed.document.diagnostics.find(
+      (entry) => entry.code === "decoder.unsupported_feature" && entry.severity === "warning",
+    );
     expect(warning?.message).toContain("/F1");
   });
 
@@ -655,35 +735,50 @@ describe("WU-059 per-font ToUnicode decoding", () => {
     const simple: FixtureFont = {
       name: "F1",
       dict: "/Subtype /TrueType /BaseFont /Arial",
-      toUnicode: { cmap: cmapProgram(["1 begincodespacerange", "<00> <FF>", "endcodespacerange", "1 beginbfchar", "<48> <0048>", "endbfchar"]), compressed: false },
+      toUnicode: {
+        cmap: cmapProgram([
+          "1 begincodespacerange",
+          "<00> <FF>",
+          "endcodespacerange",
+          "1 beginbfchar",
+          "<48> <0048>",
+          "endbfchar",
+        ]),
+        compressed: false,
+      },
     };
     // A composite font elsewhere on the page maps the two-byte code <4865>; a
     // reader that splits the simple font's hex into two-byte codes reads "Q".
     const cid = cidFont("F3", ["1 beginbfchar", "<4865> <0051>", "endbfchar"]);
-    expect(texts(decodePdf(fontPagePdf([simple, cid], "BT /F1 12 Tf 72 720 Td <48656C6C6F> Tj ET")))).toEqual(["Hello"]);
+    expect(
+      texts(decodePdf(fontPagePdf([simple, cid], "BT /F1 12 Tf 72 720 Td <48656C6C6F> Tj ET"))),
+    ).toEqual(["Hello"]);
   });
 
   it("REG-WU-059-RC-113-113-g: one- and two-byte codes with the same value are both kept", () => {
-    const parsed = pdfInternals.parseToUnicode(cmapProgram([
-      "2 begincodespacerange",
-      "<00> <7F>",
-      "<8000> <FFFF>",
-      "endcodespacerange",
-      "2 beginbfchar",
-      "<48> <0058>",
-      "<0048> <0059>",
-      "endbfchar",
-    ]));
+    const parsed = pdfInternals.parseToUnicode(
+      cmapProgram([
+        "2 begincodespacerange",
+        "<00> <7F>",
+        "<8000> <FFFF>",
+        "endcodespacerange",
+        "2 beginbfchar",
+        "<48> <0058>",
+        "<0048> <0059>",
+        "endbfchar",
+      ]),
+    );
     expect(parsed.get(0x48, 1)).toBe("X");
     expect(parsed.get(0x48, 2)).toBe("Y");
   });
 
   it("REG-WU-059-RC-113-113-h: a font held in an object stream, with inherited resources, keeps its map", () => {
-    const outcome = decodePdf(fontPagePdf(
-      [cidFont("F1", OK_ROWS, true)],
-      "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET",
-      { inheritResources: true, objectStream: true },
-    ));
+    const outcome = decodePdf(
+      fontPagePdf([cidFont("F1", OK_ROWS, true)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET", {
+        inheritResources: true,
+        objectStream: true,
+      }),
+    );
     expect(texts(outcome)).toEqual(["OK!"]);
   });
 
@@ -693,7 +788,9 @@ describe("WU-059 per-font ToUnicode decoding", () => {
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(lines);
-    const note = outcome.document.diagnostics.find((entry) => entry.message.includes("built-in byte encoding"));
+    const note = outcome.document.diagnostics.find((entry) =>
+      entry.message.includes("built-in byte encoding"),
+    );
     expect(note?.code).toBe("decoder.unsupported_feature");
     expect(note?.severity).toBe("info");
   });
@@ -701,24 +798,32 @@ describe("WU-059 per-font ToUnicode decoding", () => {
 
 /** One Helvetica page showing `content`, decoded. */
 function decodeContent(content: string): string[] {
-  return texts(decodePdf(fontPagePdf([{ name: "F1", dict: "/Subtype /Type1 /BaseFont /Helvetica" }], content)));
+  return texts(
+    decodePdf(fontPagePdf([{ name: "F1", dict: "/Subtype /Type1 /BaseFont /Helvetica" }], content)),
+  );
 }
 
 describe("WU-059 the content-stream tokenizer", () => {
   it("REG-WU-059-RC-115-115-a: a TJ word gap becomes a space", () => {
-    expect(decodeContent("BT /F1 12 Tf 72 720 Td [(Owner:)-333(Mel)-333(Status:)-333(blocked)] TJ ET"))
-      .toEqual(["Owner: Mel Status: blocked"]);
+    expect(
+      decodeContent("BT /F1 12 Tf 72 720 Td [(Owner:)-333(Mel)-333(Status:)-333(blocked)] TJ ET"),
+    ).toEqual(["Owner: Mel Status: blocked"]);
   });
 
   it("REG-WU-059-RC-115-115-b: Tm on a new baseline starts a new line", () => {
-    expect(decodeContent("BT /F1 12 Tf 1 0 0 1 72 700 Tm (Owner: Mel) Tj 1 0 0 1 72 680 Tm (Status: blocked) Tj ET"))
-      .toEqual(["Owner: Mel", "Status: blocked"]);
+    expect(
+      decodeContent(
+        "BT /F1 12 Tf 1 0 0 1 72 700 Tm (Owner: Mel) Tj 1 0 0 1 72 680 Tm (Status: blocked) Tj ET",
+      ),
+    ).toEqual(["Owner: Mel", "Status: blocked"]);
   });
 
   it("REG-WU-059-RC-115-115-c: Tm on the same baseline continues the line with one space", () => {
-    expect(decodeContent(
-      "BT /F1 12 Tf 1 0 0 1 72 700 Tm (Owner:) Tj 1 0 0 1 120 700 Tm (Mel) Tj 1 0 0 1 160 700 Tm (Next) Tj ET",
-    )).toEqual(["Owner: Mel Next"]);
+    expect(
+      decodeContent(
+        "BT /F1 12 Tf 1 0 0 1 72 700 Tm (Owner:) Tj 1 0 0 1 120 700 Tm (Mel) Tj 1 0 0 1 160 700 Tm (Next) Tj ET",
+      ),
+    ).toEqual(["Owner: Mel Next"]);
   });
 
   it("REG-WU-059-RC-115-115-d: kerning smaller than a word gap inserts no space", () => {
@@ -728,11 +833,15 @@ describe("WU-059 the content-stream tokenizer", () => {
 
   it("REG-WU-059-RC-115-115-e: ' and \" put their string on the line they begin", () => {
     expect(pdfInternals.extractContentText("BT (A) Tj (B) ' ET")).toEqual(["A", "B"]);
-    expect(pdfInternals.extractContentText("BT (A) Tj 2 2 (B) \" ET")).toEqual(["A", "B"]);
+    expect(pdfInternals.extractContentText('BT (A) Tj 2 2 (B) " ET')).toEqual(["A", "B"]);
   });
 
   it("REG-WU-059-RC-115-115-f: Td-separated writePdf lines decode into identical blocks", () => {
-    const lines = ["Storage Migration Plan", "Status: blocked", "Depends on: vendor (EU) contract \\ v2"];
+    const lines = [
+      "Storage Migration Plan",
+      "Status: blocked",
+      "Depends on: vendor (EU) contract \\ v2",
+    ];
     const outcome = decodePdf(fs.readFileSync(writePdf(path.join(tmp(), "lines.pdf"), lines)));
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
@@ -758,10 +867,17 @@ describe("WU-059 the content-stream tokenizer", () => {
       "1 0 0 1 72 660 Tm [(Depends)-333(on:)-333(legal)] TJ",
       "ET",
     ].join("\n");
-    writeBytes(path.join(root, "kerned.pdf"), fontPagePdf([{ name: "F1", dict: "/Subtype /Type1 /BaseFont /Helvetica" }], content));
+    writeBytes(
+      path.join(root, "kerned.pdf"),
+      fontPagePdf([{ name: "F1", dict: "/Subtype /Type1 /BaseFont /Helvetica" }], content),
+    );
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
-    const records = result.documentSignals.block_signals.by_format.flatMap((entry) => entry.records);
-    const status = records.find((record) => record.predicate === "work.status" && record.object === "blocked");
+    const records = result.documentSignals.block_signals.by_format.flatMap(
+      (entry) => entry.records,
+    );
+    const status = records.find(
+      (record) => record.predicate === "work.status" && record.object === "blocked",
+    );
     expect(status?.format).toBe("pdf");
     expect(status?.bounded_excerpt).not.toContain("Owner");
   });
@@ -790,7 +906,9 @@ describe("object headers inside strings, comments and streams", () => {
   }
 
   it("a literal string naming `99 0 obj` does not truncate the page that contains it", () => {
-    expect(texts(decodePdf(pageWith("/Note (mentions 99 0 obj syntax)")))).toEqual(["Lexical headers"]);
+    expect(texts(decodePdf(pageWith("/Note (mentions 99 0 obj syntax)")))).toEqual([
+      "Lexical headers",
+    ]);
   });
 
   it("a later string naming an existing object's number does not replace that object", () => {
@@ -800,7 +918,11 @@ describe("object headers inside strings, comments and streams", () => {
 
   it("raw stream data and comments containing `N 0 obj` are not headers", () => {
     const bytes = pageWith("", [
-      plainStreamObject(7, Buffer.from("opaque 2 0 obj bytes 3 0 obj", "latin1"), "/Type /XObject /Subtype /Image"),
+      plainStreamObject(
+        7,
+        Buffer.from("opaque 2 0 obj bytes 3 0 obj", "latin1"),
+        "/Type /XObject /Subtype /Image",
+      ),
       { number: 8, body: "<< /Producer (x) >> % trailing comment 3 0 obj" },
     ]);
     expect(texts(decodePdf(bytes))).toEqual(["Lexical headers"]);
@@ -831,7 +953,11 @@ describe("object headers inside strings, comments and streams", () => {
 // the next delimited `endobj` at the latest.
 describe("audit F01-F07: the object-header scan is linear and bounded by endobj", () => {
   /** The audit's base document: one page showing "Hello", plus `first` and `extra`. */
-  function helloPdf(extra: PdfFixtureObject[] = [], first: PdfFixtureObject[] = [], catalogExtra = ""): Buffer {
+  function helloPdf(
+    extra: PdfFixtureObject[] = [],
+    first: PdfFixtureObject[] = [],
+    catalogExtra = "",
+  ): Buffer {
     return buildPdf(
       [
         ...first,
@@ -871,32 +997,42 @@ describe("audit F01-F07: the object-header scan is linear and bounded by endobj"
   it("REG-AUDIT-N04-a: a name containing `stream` in a content-stream dictionary does not move its data start", () => {
     // The page's own content stream, uncompressed, with and without a name
     // holding the word `stream` ahead of /Length in its dictionary.
-    const content = (dict: string): Buffer => buildPdf(
-      [
-        { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
-        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
-        {
-          number: 3,
-          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-        },
-        { number: 4, body: dict, stream: Buffer.from("BT /F1 12 Tf 72 720 Td (Hello) Tj ET", "latin1") },
-        { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
-      ],
-      { trailer: "/Size 6 /Root 1 0 R" },
-    );
+    const content = (dict: string): Buffer =>
+      buildPdf(
+        [
+          { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+          { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+          {
+            number: 3,
+            body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+          },
+          {
+            number: 4,
+            body: dict,
+            stream: Buffer.from("BT /F1 12 Tf 72 720 Td (Hello) Tj ET", "latin1"),
+          },
+          { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+        ],
+        { trailer: "/Size 6 /Root 1 0 R" },
+      );
     expect(texts(decodePdf(content("<< /Length __LENGTH__ >>")))).toEqual(["Hello"]);
     expect(texts(decodePdf(content("<< /X /a-stream /Length __LENGTH__ >>")))).toEqual(["Hello"]);
   });
 
   it("REG-AUDIT-F01-a: 400,000 unclosed '(' cost one pass", () => {
-    const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${"(".repeat(400_000)} >>` }]));
+    const { texts: shown, ms } = timed(
+      helloPdf([{ number: 8, body: `<< /F ${"(".repeat(400_000)} >>` }]),
+    );
     expect(shown).toEqual(["Hello"]);
     expect(ms).toBeLessThan(2000);
   });
 
   it("REG-AUDIT-F01-b: an unclosed string with no endobj after it neither hides later objects nor costs a pass per '('", () => {
     // No object in this file has an `endobj`, so nothing bounds the string.
-    const built = helloPdf([], [{ number: 9, body: `<< /Broken ${"(".repeat(200_000)} >>` }]).toString("latin1");
+    const built = helloPdf(
+      [],
+      [{ number: 9, body: `<< /Broken ${"(".repeat(200_000)} >>` }],
+    ).toString("latin1");
     const bytes = Buffer.from(built.replaceAll("endobj", ""), "latin1");
     const { texts: shown, ms } = timed(bytes);
     expect(shown).toEqual(["Hello"]);
@@ -904,7 +1040,9 @@ describe("audit F01-F07: the object-header scan is linear and bounded by endobj"
   });
 
   it("REG-AUDIT-F02-a: 400,000 characters of `stream` words with no endstream cost one pass", () => {
-    const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${" stream".repeat(400_000 / 7)} >>` }]));
+    const { texts: shown, ms } = timed(
+      helloPdf([{ number: 8, body: `<< /F ${" stream".repeat(400_000 / 7)} >>` }]),
+    );
     expect(shown).toEqual(["Hello"]);
     expect(ms).toBeLessThan(2000);
   });
@@ -919,7 +1057,9 @@ describe("audit F01-F07: the object-header scan is linear and bounded by endobj"
   });
 
   it("REG-AUDIT-F07-a: a 400,000-digit run is not backtracked over as an object number", () => {
-    const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${"1".repeat(400_000)} >>` }]));
+    const { texts: shown, ms } = timed(
+      helloPdf([{ number: 8, body: `<< /F ${"1".repeat(400_000)} >>` }]),
+    );
     expect(shown).toEqual(["Hello"]);
     expect(ms).toBeLessThan(2000);
   });
@@ -937,7 +1077,11 @@ describe("audit F04: a failed inflate strategy is charged to the aggregate allow
       object: (number) => {
         const compressed = zlib.deflateSync(Buffer.alloc(size, 0x20));
         compressed[compressed.length - 1] = (compressed[compressed.length - 1] as number) ^ 0xff;
-        return { number, body: "<< /Length __LENGTH__ /Filter /FlateDecode >>", stream: compressed };
+        return {
+          number,
+          body: "<< /Length __LENGTH__ /Filter /FlateDecode >>",
+          stream: compressed,
+        };
       },
     };
   }
@@ -945,15 +1089,21 @@ describe("audit F04: a failed inflate strategy is charged to the aggregate allow
   it("REG-AUDIT-F04-a: streams that inflate fully and then fail exhaust the allowance, and that is said", () => {
     // Every corrupt stream is inflated in full by two of the three strategies
     // before its checksum fails; that work is charged even though nothing is read.
-    const pages = [textContent(["Plan of record"]), ...Array.from({ length: 12 }, () => corruptChecksumPage(600 * 1024))];
+    const pages = [
+      textContent(["Plan of record"]),
+      ...Array.from({ length: 12 }, () => corruptChecksumPage(600 * 1024)),
+    ];
     const outcome = decodePdf(multiPagePdf(pages), SMALL_STREAMS);
     expect(outcome.decoded).toBe(true);
     if (!outcome.decoded) return;
     expect(texts(outcome)).toEqual(["Plan of record"]);
-    const allowance = outcome.document.diagnostics.find((entry) =>
-      entry.code === "decoder.budget_exceeded" && entry.message.includes("allowance"));
+    const allowance = outcome.document.diagnostics.find(
+      (entry) => entry.code === "decoder.budget_exceeded" && entry.message.includes("allowance"),
+    );
     expect(allowance?.message).toContain(`allowance of ${4 * MiB} bytes was exhausted`);
-    const skipped = Number(/(\d+) stream\(s\) were not inflated/.exec(allowance?.message ?? "")?.[1]);
+    const skipped = Number(
+      /(\d+) stream\(s\) were not inflated/.exec(allowance?.message ?? "")?.[1],
+    );
     expect(skipped).toBeGreaterThanOrEqual(5);
   });
 });

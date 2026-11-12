@@ -10,7 +10,7 @@ import {
   localArchivePolicyFingerprint,
   resolveLocalArchivePolicy,
 } from "./local_archive_policy";
-import { ZipDirectory, readZipCentralDirectory } from "./zip_reader";
+import { readZipCentralDirectory, ZipDirectory } from "./zip_reader";
 
 /**
  * Version of the canonical ZIP reader and preflight whose verdict this context carries.
@@ -96,7 +96,9 @@ export class ArchiveExecutionContext {
 
   constructor(input: ArchiveExecutionContextInput) {
     if (input.resolution !== undefined && input.policy !== undefined) {
-      throw new Error("archive execution accepts either a shared resolution or policy overrides, not both");
+      throw new Error(
+        "archive execution accepts either a shared resolution or policy overrides, not both",
+      );
     }
     this.zipPath = input.zipPath;
     this.extractDir = input.extractDir;
@@ -137,8 +139,14 @@ export class ArchiveExecutionContext {
         sizeBytes += count;
       }
     } catch (error) {
-      if (source !== null) try { fs.closeSync(source); } catch {}
-      if (target !== null) try { fs.closeSync(target); } catch {}
+      if (source !== null)
+        try {
+          fs.closeSync(source);
+        } catch {}
+      if (target !== null)
+        try {
+          fs.closeSync(target);
+        } catch {}
       fs.rmSync(this.stagingRoot, { recursive: true, force: true });
       throw error;
     }

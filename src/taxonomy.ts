@@ -21,8 +21,8 @@
 // makes them exhaustive at compile time: adding a class without a mapping fails the
 // build. The mappings are advisory and intentionally lossy (many→one).
 
-import { ArtifactType, SemanticArtifactClass } from "./schema";
 import { InventoryArtifactType } from "./inventory";
+import { ArtifactType, SemanticArtifactClass } from "./schema";
 
 // v3 semantic class → canonical coarse ArtifactType.
 const SEMANTIC_CLASS_TO_ARTIFACT_TYPE: Record<SemanticArtifactClass, ArtifactType> = {

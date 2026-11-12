@@ -11,10 +11,10 @@
 // `.ipynb` JSON would be technically true and useless: nobody reads the JSON.
 import {
   BlockBuilder,
+  buildNormalizedDocument,
   DecodeInput,
   DecodeOutcome,
   DocumentDecoder,
-  buildNormalizedDocument,
   normalizedDocumentId,
 } from "./decoder";
 import { decodeTextBlocks, readUtf8 } from "./text";
@@ -147,16 +147,17 @@ export const notebookDecoder: DocumentDecoder = {
 
     const hasOutputs = cells.some(
       (cell) =>
-        cell !== null
-        && typeof cell === "object"
-        && Array.isArray((cell as Record<string, unknown>).outputs)
-        && ((cell as Record<string, unknown>).outputs as unknown[]).length > 0,
+        cell !== null &&
+        typeof cell === "object" &&
+        Array.isArray((cell as Record<string, unknown>).outputs) &&
+        ((cell as Record<string, unknown>).outputs as unknown[]).length > 0,
     );
     if (hasOutputs) {
       builder.note({
         code: "decoder.unsupported_feature",
         severity: "info",
-        message: "cell outputs are present and were not read: only cell source is decoded, and no cell was executed",
+        message:
+          "cell outputs are present and were not read: only cell source is decoded, and no cell was executed",
       });
     }
 

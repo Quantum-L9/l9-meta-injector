@@ -8,8 +8,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { resetAdapter, setAdapter } from "../src/llm";
 import { runSkillsPipelineAsync, type SkillsPipelineConfig } from "../src/skills_pipeline";
-import { setAdapter, resetAdapter } from "../src/llm";
 
 const roots: string[] = [];
 
@@ -21,16 +21,19 @@ function tempRoot(): string {
 
 function writeAuthority(root: string, repository = "Quantum-L9/l9-meta-injector"): void {
   fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    `  repository: ${repository}`,
-    "  ref: v4.0.0",
-    "default_carrier: central_manifest",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      `  repository: ${repository}`,
+      "  ref: v4.0.0",
+      "default_carrier: central_manifest",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
 }
 
 /** A weak SKILL.md the pipeline will want to improve. Returns its absolute path. */
@@ -38,7 +41,10 @@ function writeWeakSkill(root: string, name: string): string {
   const dir = path.join(root, "skills", name);
   fs.mkdirSync(dir, { recursive: true });
   const skillPath = path.join(dir, "SKILL.md");
-  fs.writeFileSync(skillPath, `---\nname: ${name}\ndescription: Reviews stuff\n---\n\n# ${name}\n\nCheck things carefully.\n`);
+  fs.writeFileSync(
+    skillPath,
+    `---\nname: ${name}\ndescription: Reviews stuff\n---\n\n# ${name}\n\nCheck things carefully.\n`,
+  );
   return skillPath;
 }
 
@@ -106,7 +112,9 @@ describe("skills mode repository-authority enforcement", () => {
 
     expect(result.authorityResolved).toBe(false);
     expect(result.repositoryMutated).toBe(false);
-    expect(result.authorityConflicts.some((c) => c.code === "META_AUTHORITY_WRITER_MISMATCH")).toBe(true);
+    expect(result.authorityConflicts.some((c) => c.code === "META_AUTHORITY_WRITER_MISMATCH")).toBe(
+      true,
+    );
     expect(fs.readFileSync(skillPath)).toEqual(before);
   });
 
@@ -172,7 +180,8 @@ describe("skills mode repository-authority enforcement", () => {
     const dir = path.join(root, "skills", "ok");
     fs.mkdirSync(dir, { recursive: true });
     const skillPath = path.join(dir, "SKILL.md");
-    const original = "---\nname: ok\ndescription: Handles omit rules carefully. Use when editing omit patterns or SKILL.md protect behavior.\nactivation_signals:\n  - omit rules\n---\n\n# Ok\n";
+    const original =
+      "---\nname: ok\ndescription: Handles omit rules carefully. Use when editing omit patterns or SKILL.md protect behavior.\nactivation_signals:\n  - omit rules\n---\n\n# Ok\n";
     fs.writeFileSync(skillPath, original);
     writeAuthority(root);
 

@@ -81,17 +81,114 @@ const WEIGHT_PRECISION = 6;
  * list. These are words that would otherwise join every document to every other.
  */
 exports.KEYPHRASE_STOPWORDS = [
-    "a", "all", "also", "am", "an", "and", "any", "are", "as", "at", "be",
-    "been", "being", "but", "by", "can", "could", "did", "do", "does", "doing",
-    "done", "for", "from", "had", "has", "have", "having", "he", "her", "here",
-    "hers", "him", "his", "how", "i", "if", "in", "into", "is", "it", "its", "just",
-    "may", "me", "might", "more", "most", "must", "my", "no", "nor", "not", "now",
-    "of", "off", "on", "once", "one", "only", "or", "other", "our", "out", "over",
-    "own", "same", "shall", "she", "should", "so", "some", "such", "than", "that",
-    "the", "their", "them", "then", "there", "these", "they", "this", "those",
-    "through", "to", "too", "under", "until", "up", "us", "very", "was", "we",
-    "were", "what", "when", "where", "which", "while", "who", "whom", "why",
-    "will", "with", "would", "you", "your",
+    "a",
+    "all",
+    "also",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "at",
+    "be",
+    "been",
+    "being",
+    "but",
+    "by",
+    "can",
+    "could",
+    "did",
+    "do",
+    "does",
+    "doing",
+    "done",
+    "for",
+    "from",
+    "had",
+    "has",
+    "have",
+    "having",
+    "he",
+    "her",
+    "here",
+    "hers",
+    "him",
+    "his",
+    "how",
+    "i",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "just",
+    "may",
+    "me",
+    "might",
+    "more",
+    "most",
+    "must",
+    "my",
+    "no",
+    "nor",
+    "not",
+    "now",
+    "of",
+    "off",
+    "on",
+    "once",
+    "one",
+    "only",
+    "or",
+    "other",
+    "our",
+    "out",
+    "over",
+    "own",
+    "same",
+    "shall",
+    "she",
+    "should",
+    "so",
+    "some",
+    "such",
+    "than",
+    "that",
+    "the",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "us",
+    "very",
+    "was",
+    "we",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "who",
+    "whom",
+    "why",
+    "will",
+    "with",
+    "would",
+    "you",
+    "your",
 ];
 const STOPWORD_SET = new Set(exports.KEYPHRASE_STOPWORDS);
 /** Suffixes that look plural and are not. */
@@ -145,7 +242,12 @@ function keyphraseProfileHash() {
 }
 /** Package-manager manifests whose declared name is a publishable package name. */
 const PACKAGE_MANIFESTS = new Set([
-    "cargo.toml", "composer.json", "deno.json", "deno.jsonc", "package.json", "pyproject.toml",
+    "cargo.toml",
+    "composer.json",
+    "deno.json",
+    "deno.jsonc",
+    "package.json",
+    "pyproject.toml",
 ]);
 const TITLE_PREDICATE = "document.title";
 const HEADING_PREDICATE = "document.heading";
@@ -253,8 +355,8 @@ function displayTermFor(prepared, term) {
     const counts = prepared.displayByTerm.get(term);
     if (counts === undefined || counts.size === 0)
         return term;
-    return [...counts.entries()]
-        .sort((a, b) => b[1] - a[1] || (0, ordering_1.compareCodePoints)(a[0], b[0]))[0]?.[0] ?? term;
+    return ([...counts.entries()].sort((a, b) => b[1] - a[1] || (0, ordering_1.compareCodePoints)(a[0], b[0]))[0]?.[0] ??
+        term);
 }
 function keyphrasesFor(prepared, documentFrequency, documentCount) {
     const scored = [];
@@ -308,14 +410,20 @@ function featureViewFor(prepared, keyphrases) {
         normalized_title_tokens: sortedUnique(prepared.fields.title),
         normalized_heading_tokens: sortedUnique(prepared.fields.heading),
         keyphrases,
-        normalized_reference_targets: sortedUnique(byPredicate(REFERENCE_PREDICATE).map(normalizeReferenceTarget).filter((t) => t.length > 0)),
-        declared_project_identifiers: sortedUnique(declared.map((entry) => (0, corpus_analysis_1.normalizeForAnalysis)(entry.identifier).trim()).filter((v) => v.length > 0)),
+        normalized_reference_targets: sortedUnique(byPredicate(REFERENCE_PREDICATE)
+            .map(normalizeReferenceTarget)
+            .filter((t) => t.length > 0)),
+        declared_project_identifiers: sortedUnique(declared
+            .map((entry) => (0, corpus_analysis_1.normalizeForAnalysis)(entry.identifier).trim())
+            .filter((v) => v.length > 0)),
         declared_package_names: sortedUnique(declared
             .filter((entry) => PACKAGE_MANIFESTS.has(entry.manifest.toLowerCase()))
             .map((entry) => (0, corpus_analysis_1.normalizeForAnalysis)(entry.identifier).trim())
             .filter((v) => v.length > 0)),
         declared_service_names: [],
-        declared_dependencies: sortedUnique(byPredicate(DEPENDS_PREDICATE).map(normalizeReferenceTarget).filter((t) => t.length > 0)),
+        declared_dependencies: sortedUnique(byPredicate(DEPENDS_PREDICATE)
+            .map(normalizeReferenceTarget)
+            .filter((t) => t.length > 0)),
         statuses: sortedUnique(byPredicate(STATUS_PREDICATE).map((v) => (0, corpus_analysis_1.normalizeForAnalysis)(v).trim())),
         kinds: sortedUnique(byPredicate(KIND_PREDICATE).map((v) => (0, corpus_analysis_1.normalizeForAnalysis)(v).trim())),
         task_terms: [...taskTerms].sort(ordering_1.compareCodePoints),
@@ -328,9 +436,9 @@ function featureViewFor(prepared, keyphrases) {
             object: normalizeReferenceTarget(a.object),
             assertion_id: a.assertion_id,
         }))
-            .sort((a, b) => (0, ordering_1.compareCodePoints)(a.predicate, b.predicate)
-            || (0, ordering_1.compareCodePoints)(a.object, b.object)
-            || (0, ordering_1.compareCodePoints)(a.assertion_id, b.assertion_id)),
+            .sort((a, b) => (0, ordering_1.compareCodePoints)(a.predicate, b.predicate) ||
+            (0, ordering_1.compareCodePoints)(a.object, b.object) ||
+            (0, ordering_1.compareCodePoints)(a.assertion_id, b.assertion_id)),
         archive_ancestry: [...(artifact.archive_ancestry ?? [])],
         is_archive_member: artifact.is_archive_member,
         exact_duplicate_cluster_id: artifact.exact_duplicate_cluster_id ?? null,
@@ -355,7 +463,7 @@ function buildFeatureViews(artifacts) {
     }
     return prepared
         .map((entry) => featureViewFor(entry, keyphrasesFor(entry, documentFrequency, prepared.length)))
-        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
-        || (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id));
+        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path) ||
+        (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id));
 }
 //# sourceMappingURL=corpus_semantics.js.map

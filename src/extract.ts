@@ -1,8 +1,8 @@
 // extract.ts — Structured-grammar extraction: AST/regex for code, frontmatter for .md
 // Rule: parse what has grammar; for prose fields return UNKNOWN (assist.ts fills those).
 import * as crypto from "node:crypto";
-import { ExtractedFields, UNKNOWN, Unknown, HeaderConvention } from "./schema";
 import { getAdapter } from "./llm";
+import { ExtractedFields, HeaderConvention, UNKNOWN, Unknown } from "./schema";
 
 export function contentHash(text: string): string {
   return crypto.createHash("sha256").update(text, "utf8").digest("hex");
@@ -18,7 +18,9 @@ function extractList(body: string, heading: RegExp): string[] | Unknown {
   const start = m.index + m[0].length;
   const nextHeading = /\n## /;
   const nextMatch = nextHeading.exec(body.slice(start));
-  const section = nextMatch ? body.slice(start, start + (nextMatch.index ?? body.length)) : body.slice(start);
+  const section = nextMatch
+    ? body.slice(start, start + (nextMatch.index ?? body.length))
+    : body.slice(start);
   const items = section.match(/^[-*]\s+.+/gm)?.map((l) => l.replace(/^[-*]\s+/, "").trim()) ?? [];
   return items.length > 0 ? items : UNKNOWN;
 }
@@ -36,14 +38,24 @@ function extractScalar(body: string, patterns: RegExp[]): string | Unknown {
 export function extract(body: string): ExtractedFields {
   return {
     role: extractScalar(body, [/^##\s+Role[ \t]*\n+([^\n#]+)/m, /\*\*Role\*\*:?\s*([^\n]+)/]),
-    objective: extractScalar(body, [/^##\s+Objective[ \t]*\n+([^\n#]+)/m, /\*\*Objective\*\*:?\s*([^\n]+)/]),
+    objective: extractScalar(body, [
+      /^##\s+Objective[ \t]*\n+([^\n#]+)/m,
+      /\*\*Objective\*\*:?\s*([^\n]+)/,
+    ]),
     constraints: extractList(body, /^##\s+Constraints?\s*$/m),
     validationGates: extractList(body, /^##\s+Validation Gates?\s*$/m),
     stopConditions: extractList(body, /^##\s+Stop Conditions?\s*$/m),
     phaseModel: extractList(body, /^##\s+(Phase Model|Phases)\s*$/m),
     inputVariables: extractList(body, /^##\s+Input Variables?\s*$/m),
-    outputFormat: extractScalar(body, [/^##\s+Output Format[ \t]*\n+([^\n#]+)/m, /\*\*Output Format\*\*:?\s*([^\n]+)/]),
-    modelTarget: extractScalar(body, [/^##\s+Model[ _-]?Target[ \t]*\n+([^\n#]+)/mi, /model[_-]?target:?\s*([^\n,]+)/i, /\*\*Model Target\*\*:?\s*([^\n]+)/]),
+    outputFormat: extractScalar(body, [
+      /^##\s+Output Format[ \t]*\n+([^\n#]+)/m,
+      /\*\*Output Format\*\*:?\s*([^\n]+)/,
+    ]),
+    modelTarget: extractScalar(body, [
+      /^##\s+Model[ _-]?Target[ \t]*\n+([^\n#]+)/im,
+      /model[_-]?target:?\s*([^\n,]+)/i,
+      /\*\*Model Target\*\*:?\s*([^\n]+)/,
+    ]),
   };
 }
 
@@ -59,7 +71,11 @@ function withoutBom(raw: string): string {
   return raw.startsWith(BOM) ? raw.slice(BOM.length) : raw;
 }
 
-export function splitContent(input: string): { frontMatter: string | null; body: string; headerConvention: HeaderConvention } {
+export function splitContent(input: string): {
+  frontMatter: string | null;
+  body: string;
+  headerConvention: HeaderConvention;
+} {
   const raw = withoutBom(input);
   if (raw.startsWith("---\n") || raw.startsWith("---\r\n")) {
     const end = raw.indexOf("\n---", 4);
@@ -72,8 +88,10 @@ export function splitContent(input: string): { frontMatter: string | null; body:
       return { frontMatter: fm, body: rest, headerConvention: "full-yaml" };
     }
   }
-  if (/^[a-zA-Z_]+:\s+.+/m.test(raw.slice(0, 300))) return { frontMatter: null, body: raw, headerConvention: "bare-yaml" };
-  if (/\|.+\|.+\|/.test(raw.slice(0, 500))) return { frontMatter: null, body: raw, headerConvention: "prose-table" };
+  if (/^[a-zA-Z_]+:\s+.+/m.test(raw.slice(0, 300)))
+    return { frontMatter: null, body: raw, headerConvention: "bare-yaml" };
+  if (/\|.+\|.+\|/.test(raw.slice(0, 500)))
+    return { frontMatter: null, body: raw, headerConvention: "prose-table" };
   return { frontMatter: null, body: raw, headerConvention: "none" };
 }
 

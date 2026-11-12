@@ -9,8 +9,8 @@ describe("findFiles — .txt support", () => {
     fs.writeFileSync(path.join(tmp, "foo.md"), "# Foo");
     fs.writeFileSync(path.join(tmp, "bar.txt"), "Plain text");
     const found = findFiles(tmp, "**/*.md");
-    expect(found.some(f => f.endsWith(".md"))).toBe(true);
-    expect(found.some(f => f.endsWith(".txt"))).toBe(false);
+    expect(found.some((f) => f.endsWith(".md"))).toBe(true);
+    expect(found.some((f) => f.endsWith(".txt"))).toBe(false);
     fs.rmSync(tmp, { recursive: true });
   });
 
@@ -19,8 +19,8 @@ describe("findFiles — .txt support", () => {
     fs.writeFileSync(path.join(tmp, "foo.md"), "# Foo");
     fs.writeFileSync(path.join(tmp, "bar.txt"), "Plain text");
     const found = findFiles(tmp, "**/*.txt");
-    expect(found.some(f => f.endsWith(".txt"))).toBe(true);
-    expect(found.some(f => f.endsWith(".md"))).toBe(false);
+    expect(found.some((f) => f.endsWith(".txt"))).toBe(true);
+    expect(found.some((f) => f.endsWith(".md"))).toBe(false);
     fs.rmSync(tmp, { recursive: true });
   });
 
@@ -29,8 +29,8 @@ describe("findFiles — .txt support", () => {
     fs.writeFileSync(path.join(tmp, "foo.md"), "# Foo");
     fs.writeFileSync(path.join(tmp, "bar.txt"), "Plain text");
     const found = findFiles(tmp, "**/*");
-    expect(found.some(f => f.endsWith(".md"))).toBe(true);
-    expect(found.some(f => f.endsWith(".txt"))).toBe(true);
+    expect(found.some((f) => f.endsWith(".md"))).toBe(true);
+    expect(found.some((f) => f.endsWith(".txt"))).toBe(true);
     fs.rmSync(tmp, { recursive: true });
   });
 });

@@ -97,8 +97,9 @@ describe("the LLM firewall", () => {
     // sites: not one of `llm.ts`'s exported symbols is named anywhere in the
     // semantic modules.
     const llmSource = read("llm.ts");
-    const exported = [...llmSource.matchAll(/export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)/g)]
-      .map((match) => match[1] as string);
+    const exported = [
+      ...llmSource.matchAll(/export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)/g),
+    ].map((match) => match[1] as string);
     expect(exported.length).toBeGreaterThan(0);
 
     for (const module of SEMANTIC_MODULES) {
@@ -176,8 +177,9 @@ describe("the semantic pass and the Repository Model Packet", () => {
     // The project candidate is admitted on declared identity either way, and its
     // identity is a function of members and the fusion profile — not of how many
     // signals happened to fire.
-    expect(with_.projects.candidates.map((candidate) => candidate.candidate_id))
-      .toEqual(without.projects.candidates.map((candidate) => candidate.candidate_id));
+    expect(with_.projects.candidates.map((candidate) => candidate.candidate_id)).toEqual(
+      without.projects.candidates.map((candidate) => candidate.candidate_id),
+    );
   });
 
   it("records the embedding state in the analysis profile, so a reader can tell", () => {

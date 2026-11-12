@@ -163,7 +163,8 @@ function parseLockHolder(text: string | null): PublishLockHolder | null {
   try {
     const parsed = JSON.parse(text) as Partial<PublishLockHolder> | null;
     if (parsed === null || typeof parsed !== "object") return null;
-    if (typeof parsed.pid !== "number" || !Number.isInteger(parsed.pid) || parsed.pid <= 0) return null;
+    if (typeof parsed.pid !== "number" || !Number.isInteger(parsed.pid) || parsed.pid <= 0)
+      return null;
     if (typeof parsed.host !== "string") return null;
     return { pid: parsed.pid, host: parsed.host, acquired_at: String(parsed.acquired_at ?? "") };
   } catch {
@@ -241,7 +242,11 @@ function acquireTakeoverGuard(lockFile: string): { file: string; contents: strin
     }
     reapDeadGuard(lockFile, file, seen);
   }
-  throw publisherRefusal(lockFile, parseLockHolder(readLockText(file)), `, taking over a stale lock under ${file}`);
+  throw publisherRefusal(
+    lockFile,
+    parseLockHolder(readLockText(file)),
+    `, taking over a stale lock under ${file}`,
+  );
 }
 
 /**
@@ -271,13 +276,18 @@ function reapDeadGuard(lockFile: string, file: string, seen: string | null): voi
     // A third guard stands there already; it is the one in charge now.
   }
   fs.rmSync(aside, { force: true });
-  throw publisherRefusal(lockFile, parseLockHolder(moved), `, taking over a stale lock under ${file}`);
+  throw publisherRefusal(
+    lockFile,
+    parseLockHolder(moved),
+    `, taking over a stale lock under ${file}`,
+  );
 }
 
 /** Remove a guard or lock, but only if it is still the one this publisher wrote. */
 function releaseOwned(owned: { file: string; contents: string }): void {
   try {
-    if (fs.readFileSync(owned.file, "utf8") === owned.contents) fs.rmSync(owned.file, { force: true });
+    if (fs.readFileSync(owned.file, "utf8") === owned.contents)
+      fs.rmSync(owned.file, { force: true });
   } catch {
     // Already gone: nothing to release.
   }
@@ -314,7 +324,6 @@ function acquirePublishLock(outDir: string): { file: string; contents: string } 
   }
   throw publisherRefusal(file, parseLockHolder(readLockText(file)));
 }
-
 
 /** The string ids of a pointer's publication record, tolerating a pointer without one. */
 function recordedHistory(current: CorpusCurrent | null): string[] {
@@ -384,7 +393,8 @@ export function resolveCurrentGeneration(outDir: string): {
 export function listGenerations(outDir: string): string[] {
   const root = path.join(outDir, GENERATIONS_DIRECTORY);
   try {
-    return fs.readdirSync(root, { withFileTypes: true })
+    return fs
+      .readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort(compareCodePoints);
@@ -446,7 +456,14 @@ export function publishCorpusGeneration(input: PublishInput): PublishResult {
 
   const lock = acquirePublishLock(outDir);
   try {
-    return publishUnderLock(input, { outDir, id, directoryName, generationRef, generationDirectory, ordered });
+    return publishUnderLock(input, {
+      outDir,
+      id,
+      directoryName,
+      generationRef,
+      generationDirectory,
+      ordered,
+    });
   } finally {
     releaseOwned(lock);
   }
@@ -505,16 +522,19 @@ function publishUnderLock(
     .filter((file) => !fs.existsSync(path.join(generationDirectory, ...file.path.split("/"))))
     .map((file) => file.path);
   if (absent.length > 0) {
-    throw new Error(`corpus: generation ${generationRef} is missing ${absent.join(", ")}; CURRENT.json was not switched`);
+    throw new Error(
+      `corpus: generation ${generationRef} is missing ${absent.join(", ")}; CURRENT.json was not switched`,
+    );
   }
 
   // Publication order, newest first: the generation being replaced, then what it
   // replaced. Recorded in the pointer itself, so it moves in the same rename.
-  const history = previous === null
-    ? []
-    : [previous.generation_id, ...recordedHistory(previous)]
-      .filter((item, index, list) => item !== id && list.indexOf(item) === index)
-      .slice(0, Math.max(keep, MIN_HISTORY_LENGTH));
+  const history =
+    previous === null
+      ? []
+      : [previous.generation_id, ...recordedHistory(previous)]
+          .filter((item, index, list) => item !== id && list.indexOf(item) === index)
+          .slice(0, Math.max(keep, MIN_HISTORY_LENGTH));
 
   const current: CorpusCurrent = {
     schema: CORPUS_CURRENT_SCHEMA,

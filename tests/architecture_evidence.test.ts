@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { ArchitectureEvidenceRecord } from "../src/corpus_architecture_evidence";
 import {
   ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS,
   ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA,
@@ -24,10 +25,9 @@ import {
   architectureEvidenceProfileHash,
   verifyArchitectureEvidenceExport,
 } from "../src/corpus_architecture_evidence";
-import type { ArchitectureEvidenceRecord } from "../src/corpus_architecture_evidence";
 import { FileCorpusCache } from "../src/corpus_cache";
-import { runCorpusScan } from "../src/corpus_scan";
 import type { CorpusScanResult } from "../src/corpus_scan";
+import { runCorpusScan } from "../src/corpus_scan";
 import {
   ARCHITECTURE_STATEMENT_CLASSES,
   readArchitectureStatements,
@@ -169,7 +169,11 @@ function byPath(result: CorpusScanResult, sourcePath: string): ArchitectureEvide
 
 /** The exact line a `line_span` record cites, read from the file it names. */
 function citedLine(root: string, record: ArchitectureEvidenceRecord): string {
-  const locator = record.structured_locator as { kind: string; line_start: number; line_end: number };
+  const locator = record.structured_locator as {
+    kind: string;
+    line_start: number;
+    line_end: number;
+  };
   expect(locator.kind).toBe("line_span");
   expect(locator.line_end).toBe(locator.line_start);
   const lines = fs.readFileSync(path.join(root, record.source_path), "utf8").split("\n");
@@ -183,11 +187,13 @@ describe("the questions a developer asks of a design corpus", () => {
     const root = corpusRoot();
     const result = await scan(root);
     const open = records(result).filter((record) => record.statement_class === "open_question");
-    expect(new Set(open.map((record) => record.source_path))).toEqual(new Set([
-      "plans/gate-routing-proposal.md",
-      "handoffs/chassis-auth-handoff.md",
-      "specs/transport-packet-spec.docx",
-    ]));
+    expect(new Set(open.map((record) => record.source_path))).toEqual(
+      new Set([
+        "plans/gate-routing-proposal.md",
+        "handoffs/chassis-auth-handoff.md",
+        "specs/transport-packet-spec.docx",
+      ]),
+    );
     // The sparse document labels an `## Open Questions` section and lists nothing
     // under it: it does not contain a question, and it is not in the answer.
     expect(open.some((record) => record.source_path === "plans/sparse-notes.md")).toBe(false);
@@ -213,8 +219,9 @@ describe("the questions a developer asks of a design corpus", () => {
     ]);
     // The handoff declared its constraints as `Constraints:` and a list — the
     // same two-line shape in another form, read as two constraints.
-    const handoff = byPath(result, "handoffs/chassis-auth-handoff.md")
-      .filter((record) => record.statement_class === "constraint");
+    const handoff = byPath(result, "handoffs/chassis-auth-handoff.md").filter(
+      (record) => record.statement_class === "constraint",
+    );
     expect(handoff.map((record) => record.declared_text).sort()).toEqual([
       "Engines contain no auth, routing or FastAPI routes.",
       "Tenant resolution stays in the chassis.",
@@ -222,8 +229,9 @@ describe("the questions a developer asks of a design corpus", () => {
     expect(handoff.every((record) => record.recognition.form === "label_list")).toBe(true);
     // The specification declared an invariant, under an `Invariants` heading in a
     // Word document, and the sentence beside it is not promoted into one.
-    const spec = byPath(result, "specs/transport-packet-spec.docx")
-      .filter((record) => record.statement_class === "constraint");
+    const spec = byPath(result, "specs/transport-packet-spec.docx").filter(
+      (record) => record.statement_class === "constraint",
+    );
     expect(spec.map((record) => record.declared_text)).toEqual([
       "Every packet change uses derive() or withHop(); nothing mutates a packet in place.",
     ]);
@@ -232,8 +240,9 @@ describe("the questions a developer asks of a design corpus", () => {
   it("lists the decision statements a WIP artifact recorded without calling them approved", async () => {
     const root = corpusRoot();
     const result = await scan(root);
-    const decisions = byPath(result, "plans/gate-routing-proposal.md")
-      .filter((record) => record.statement_class === "decision_statement");
+    const decisions = byPath(result, "plans/gate-routing-proposal.md").filter(
+      (record) => record.statement_class === "decision_statement",
+    );
     expect(decisions.map((record) => record.declared_text).sort()).toEqual([
       "Audit log writes are append-only.",
       "Routing tables are derived from the packet header, not from node config.",
@@ -279,7 +288,9 @@ describe("the questions a developer asks of a design corpus", () => {
     // The three readings cite three different shapes, and the record says which.
     const forms = new Set(all.map((record) => record.recognition.form));
     expect(forms).toEqual(new Set(["field_label", "label_list", "section_heading"]));
-    const fielded = all.find((record) => record.recognition.form === "field_label" && record.statement_class === "intent");
+    const fielded = all.find(
+      (record) => record.recognition.form === "field_label" && record.statement_class === "intent",
+    );
     expect(fielded?.recognition.label).toBe("objective");
     expect(fielded?.source_path).toBe("plans/gate-routing-proposal.md");
     expect(fielded?.structured_locator).toEqual({ kind: "line_span", line_start: 7, line_end: 7 });
@@ -293,7 +304,9 @@ describe("the questions a developer asks of a design corpus", () => {
     // heading of the specification and are not invariants.
     expect(texts.some((text) => /^Status:/.test(text) || /^Type:/.test(text))).toBe(false);
     // The handoff's tasks, blocker and dependency are work signals, not constraints.
-    expect(texts.some((text) => /auth middleware|security review|chassis-core/.test(text))).toBe(false);
+    expect(texts.some((text) => /auth middleware|security review|chassis-core/.test(text))).toBe(
+      false,
+    );
     // The table under `## Decisions` is a table.
     expect(texts.some((text) => text.includes("|"))).toBe(false);
     const manifest = result.architectureEvidence?.manifest;
@@ -310,7 +323,9 @@ describe("the architecture-development selection profile", () => {
     const root = corpusRoot();
     const result = await scan(root);
     const proposal = byPath(result, "plans/gate-routing-proposal.md");
-    expect(proposal.every((record) => record.selection.profile_id === ARCHITECTURE_SELECTION_PROFILE_ID)).toBe(true);
+    expect(
+      proposal.every((record) => record.selection.profile_id === ARCHITECTURE_SELECTION_PROFILE_ID),
+    ).toBe(true);
     expect(proposal[0]?.selection.roles).toEqual(["wip_proposal"]);
     expect(proposal.every((record) => record.selection.selected)).toBe(true);
     const evidence = proposal[0]?.selection.role_evidence ?? [];
@@ -320,12 +335,15 @@ describe("the architecture-development selection profile", () => {
     ]);
     // The ids the reasons cite resolve to assertions in the root's own packet.
     const packetAssertionIds = new Set(
-      result.rootPackets[0]?.packet.payload.assertions.map((assertion) => assertion.assertion_id) ?? [],
+      result.rootPackets[0]?.packet.payload.assertions.map((assertion) => assertion.assertion_id) ??
+        [],
     );
     for (const item of evidence) expect(packetAssertionIds.has(item.assertion_id)).toBe(true);
     for (const record of proposal) {
       expect(record.selection.reasons.length).toBeGreaterThan(0);
-      expect(record.selection.reasons[0]).toContain(`wip_proposal selects ${record.statement_class}`);
+      expect(record.selection.reasons[0]).toContain(
+        `wip_proposal selects ${record.statement_class}`,
+      );
       expect(record.selection.reasons[0]).toContain("work.kind=proposal");
     }
   });
@@ -346,8 +364,9 @@ describe("the architecture-development selection profile", () => {
     expect(decision?.selection.selected).toBe(true);
     expect(decision?.selection.reasons[0]).toContain("specification selects decision_statement");
     // Applicability evidence is carried where the document declared it.
-    expect(decision?.work_context.applicability.map((ref) => [ref.predicate, ref.object]))
-      .toEqual([["work.status", "active"]]);
+    expect(decision?.work_context.applicability.map((ref) => [ref.predicate, ref.object])).toEqual([
+      ["work.status", "active"],
+    ]);
     const manifest = result.architectureEvidence?.manifest;
     expect(manifest?.selected_record_count).toBe((manifest?.record_count ?? 0) - 1);
   });
@@ -365,7 +384,9 @@ describe("the architecture-development selection profile", () => {
       { predicate: "work.task.open", count: 1 },
     ]);
     expect(handoff.map((record) => record.statement_class).sort()).toEqual([
-      "constraint", "constraint", "open_question",
+      "constraint",
+      "constraint",
+      "open_question",
     ]);
     expect(handoff.every((record) => record.selection.selected)).toBe(true);
   });
@@ -379,16 +400,29 @@ describe("the architecture-development selection profile", () => {
     expect(untyped[0]?.selection.roles).toEqual(["unknown"]);
     expect(untyped[0]?.selection.selected).toBe(true);
     expect(untyped[0]?.selection.reasons[0]).toContain("unknown selects intent");
-    expect(untyped[0]?.work_context).toEqual({ kinds: [], statuses: [], applicability: [], handoff: [], declarations: [] });
+    expect(untyped[0]?.work_context).toEqual({
+      kinds: [],
+      statuses: [],
+      applicability: [],
+      handoff: [],
+      declarations: [],
+    });
   });
 
   it("roles overlap, and the selected classes are their union", () => {
     // A direct reading with a document that is both a plan and a handoff.
     const reading = readArchitectureStatements([
-      { block_id: "b1", kind: "paragraph", text: "Objective: ship\nAssumption: time\nOpen question: who", locator: { kind: "line_span", line_start: 1, line_end: 3 } },
+      {
+        block_id: "b1",
+        kind: "paragraph",
+        text: "Objective: ship\nAssumption: time\nOpen question: who",
+        locator: { kind: "line_span", line_start: 1, line_end: 3 },
+      },
     ]);
     expect(reading.statements.map((statement) => statement.statement_class)).toEqual([
-      "intent", "assumption", "open_question",
+      "intent",
+      "assumption",
+      "open_question",
     ]);
     expect(reading.statements.map((statement) => statement.unit_index)).toEqual([0, 1, 2]);
   });
@@ -399,7 +433,10 @@ describe("the architecture-development selection profile", () => {
 describe("selecting the projection moves the analysis identity and nothing else", () => {
   it("is not run by default, and says so rather than reporting nothing", async () => {
     const root = corpusRoot();
-    const result = await runCorpusScan({ roots: [{ path: root, name: "ArchDocs" }], producerVersion: "test" });
+    const result = await runCorpusScan({
+      roots: [{ path: root, name: "ArchDocs" }],
+      producerVersion: "test",
+    });
     expect(result.architectureEvidence).toBeNull();
     expect(result.snapshot.architecture_evidence).toBeUndefined();
     expect(result.snapshot.analysis).not.toHaveProperty("architecture_evidence_profile");
@@ -407,47 +444,72 @@ describe("selecting the projection moves the analysis identity and nothing else"
 
   it("leaves the source snapshot, the packets, the work signals and the document index unchanged", async () => {
     const root = corpusRoot();
-    const without = await runCorpusScan({ roots: [{ path: root, name: "ArchDocs" }], producerVersion: "test" });
+    const without = await runCorpusScan({
+      roots: [{ path: root, name: "ArchDocs" }],
+      producerVersion: "test",
+    });
     const withProfile = await scan(root);
 
-    expect(withProfile.snapshot.corpus_source_snapshot_id).toBe(without.snapshot.corpus_source_snapshot_id);
-    expect(withProfile.snapshot.analysis.corpus_analysis_id).not.toBe(without.snapshot.analysis.corpus_analysis_id);
-    expect(withProfile.snapshot.analysis.architecture_evidence_profile).toBe(architectureEvidenceProfileHash());
+    expect(withProfile.snapshot.corpus_source_snapshot_id).toBe(
+      without.snapshot.corpus_source_snapshot_id,
+    );
+    expect(withProfile.snapshot.analysis.corpus_analysis_id).not.toBe(
+      without.snapshot.analysis.corpus_analysis_id,
+    );
+    expect(withProfile.snapshot.analysis.architecture_evidence_profile).toBe(
+      architectureEvidenceProfileHash(),
+    );
     // Every other profile is the one the default run applied.
-    const { architecture_evidence_profile: _profile, corpus_analysis_id: _id, ...rest } = withProfile.snapshot.analysis;
+    const {
+      architecture_evidence_profile: _profile,
+      corpus_analysis_id: _id,
+      ...rest
+    } = withProfile.snapshot.analysis;
     const { corpus_analysis_id: _defaultId, ...defaultRest } = without.snapshot.analysis;
     expect(rest).toEqual(defaultRest);
 
-    expect(withProfile.rootPackets.map((root) => root.packet.packet_id))
-      .toEqual(without.rootPackets.map((root) => root.packet.packet_id));
-    expect(withProfile.documentWorkSignals.payloadJsonl).toBe(without.documentWorkSignals.payloadJsonl);
-    expect(withProfile.documentWorkSignals.manifest.payload_semantic_hash)
-      .toBe(without.documentWorkSignals.manifest.payload_semantic_hash);
+    expect(withProfile.rootPackets.map((root) => root.packet.packet_id)).toEqual(
+      without.rootPackets.map((root) => root.packet.packet_id),
+    );
+    expect(withProfile.documentWorkSignals.payloadJsonl).toBe(
+      without.documentWorkSignals.payloadJsonl,
+    );
+    expect(withProfile.documentWorkSignals.manifest.payload_semantic_hash).toBe(
+      without.documentWorkSignals.manifest.payload_semantic_hash,
+    );
     expect(withProfile.documentIndex.documents).toEqual(without.documentIndex.documents);
     expect(withProfile.snapshot.artifacts).toEqual(without.snapshot.artifacts);
     // The snapshot names the payload it wrote, and the reference matches the manifest.
     const reference = withProfile.snapshot.architecture_evidence;
     expect(reference?.schema).toBe(ARCHITECTURE_EVIDENCE_SCHEMA);
     expect(reference?.record_count).toBe(withProfile.architectureEvidence?.manifest.record_count);
-    expect(reference?.payload_artifact_hash).toBe(withProfile.architectureEvidence?.manifest.payload_artifact_hash);
+    expect(reference?.payload_artifact_hash).toBe(
+      withProfile.architectureEvidence?.manifest.payload_artifact_hash,
+    );
   });
 
   it("counts every decoded document the reader was given, blocks or not, and refuses to run without interpretation", async () => {
     const root = corpusRoot();
     const result = await scan(root);
     const decoded = result.documentIndex.documents.filter((entry) => entry.decoded);
-    expect(decoded.some((entry) => entry.root_relative_path === "notes/empty.md" && entry.block_count === 0)).toBe(true);
+    expect(
+      decoded.some(
+        (entry) => entry.root_relative_path === "notes/empty.md" && entry.block_count === 0,
+      ),
+    ).toBe(true);
     expect(result.architectureEvidence?.manifest.documents_read).toBe(decoded.length);
     expect(result.architectureEvidence?.manifest.document_count).toBeLessThan(decoded.length);
     // Without the interpretation pass a Markdown proposal declares no kind or
     // status to the profile, and every text document would silently become an
     // unknown role. The combination is refused, not degraded.
-    await expect(runCorpusScan({
-      roots: [{ path: root, name: "ArchDocs" }],
-      producerVersion: "test",
-      architectureEvidence: true,
-      interpret: false,
-    })).rejects.toThrow(/--architecture-evidence needs the interpretation pass/);
+    await expect(
+      runCorpusScan({
+        roots: [{ path: root, name: "ArchDocs" }],
+        producerVersion: "test",
+        architectureEvidence: true,
+        interpret: false,
+      }),
+    ).rejects.toThrow(/--architecture-evidence needs the interpretation pass/);
   });
 
   it("invalidates no cache layer: a warm cache serves a run that newly selects the projection", async () => {
@@ -478,10 +540,15 @@ describe("the payload is a function of the corpus, not of the run", () => {
     const root = corpusRoot();
     const first = await scan(root);
     const second = await scan(root);
-    expect(second.architectureEvidence?.payloadJsonl).toBe(first.architectureEvidence?.payloadJsonl);
-    expect(second.architectureEvidence?.manifestJson).toBe(first.architectureEvidence?.manifestJson);
-    expect(second.architectureEvidence?.manifest.payload_artifact_hash)
-      .toBe(first.architectureEvidence?.manifest.payload_artifact_hash);
+    expect(second.architectureEvidence?.payloadJsonl).toBe(
+      first.architectureEvidence?.payloadJsonl,
+    );
+    expect(second.architectureEvidence?.manifestJson).toBe(
+      first.architectureEvidence?.manifestJson,
+    );
+    expect(second.architectureEvidence?.manifest.payload_artifact_hash).toBe(
+      first.architectureEvidence?.manifest.payload_artifact_hash,
+    );
   });
 
   it("emits the same bytes for the same bytes mounted somewhere else", async () => {
@@ -491,9 +558,19 @@ describe("the payload is a function of the corpus, not of the run", () => {
       fs.mkdirSync(path.join(base, "Drive"));
       writeCorpus(path.join(base, "Drive"));
     }
-    const first = await runCorpusScan({ roots: [{ path: path.join(one, "Drive"), name: "Drive" }], producerVersion: "test", architectureEvidence: true });
-    const second = await runCorpusScan({ roots: [{ path: path.join(two, "Drive"), name: "Drive" }], producerVersion: "test", architectureEvidence: true });
-    expect(second.architectureEvidence?.payloadJsonl).toBe(first.architectureEvidence?.payloadJsonl);
+    const first = await runCorpusScan({
+      roots: [{ path: path.join(one, "Drive"), name: "Drive" }],
+      producerVersion: "test",
+      architectureEvidence: true,
+    });
+    const second = await runCorpusScan({
+      roots: [{ path: path.join(two, "Drive"), name: "Drive" }],
+      producerVersion: "test",
+      architectureEvidence: true,
+    });
+    expect(second.architectureEvidence?.payloadJsonl).toBe(
+      first.architectureEvidence?.payloadJsonl,
+    );
     expect(first.architectureEvidence?.payloadJsonl).not.toContain(one);
     expect(first.architectureEvidence?.payloadJsonl).not.toContain(os.tmpdir());
   });
@@ -501,10 +578,17 @@ describe("the payload is a function of the corpus, not of the run", () => {
   it("joins back to the document index and the work-signal payload by the ids it carries", async () => {
     const root = corpusRoot();
     const result = await scan(root);
-    const documents = new Map(result.documentIndex.documents.map((entry) => [entry.artifact_id, entry]));
-    const artifacts = new Set(result.snapshot.artifacts.map((artifact) => artifact.virtual_source_id));
+    const documents = new Map(
+      result.documentIndex.documents.map((entry) => [entry.artifact_id, entry]),
+    );
+    const artifacts = new Set(
+      result.snapshot.artifacts.map((artifact) => artifact.virtual_source_id),
+    );
     const signalIds = new Set(result.documentWorkSignals.records.map((record) => record.signal_id));
-    const packetIds = new Set(result.rootPackets[0]?.packet.payload.assertions.map((assertion) => assertion.assertion_id) ?? []);
+    const packetIds = new Set(
+      result.rootPackets[0]?.packet.payload.assertions.map((assertion) => assertion.assertion_id) ??
+        [],
+    );
     for (const record of records(result)) {
       expect(artifacts.has(record.artifact_id)).toBe(true);
       const entry = documents.get(record.artifact_id);
@@ -526,28 +610,54 @@ describe("the payload is a function of the corpus, not of the run", () => {
     const evidence = result.architectureEvidence;
     if (evidence === null) throw new Error("not selected");
     expect(evidence.manifest.schema).toBe(ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA);
-    expect(evidence.manifest.by_class.map((entry) => entry.statement_class)).toEqual([...ARCHITECTURE_STATEMENT_CLASSES]);
-    expect(evidence.manifest.by_class.reduce((sum, entry) => sum + entry.record_count, 0)).toBe(evidence.manifest.record_count);
+    expect(evidence.manifest.by_class.map((entry) => entry.statement_class)).toEqual([
+      ...ARCHITECTURE_STATEMENT_CLASSES,
+    ]);
+    expect(evidence.manifest.by_class.reduce((sum, entry) => sum + entry.record_count, 0)).toBe(
+      evidence.manifest.record_count,
+    );
     expect(evidence.manifest.by_role.map((entry) => entry.role)).toEqual([
-      "development_handoff", "specification", "unknown", "wip_proposal",
+      "development_handoff",
+      "specification",
+      "unknown",
+      "wip_proposal",
     ]);
     const known = {
-      knownArtifactIds: new Set(result.snapshot.artifacts.map((artifact) => artifact.virtual_source_id)),
+      knownArtifactIds: new Set(
+        result.snapshot.artifacts.map((artifact) => artifact.virtual_source_id),
+      ),
       knownNormalizedDocumentIds: new Set(
         result.documentIndex.documents
           .map((entry) => entry.normalized_document_id)
           .filter((id): id is string => id !== null),
       ),
     };
-    expect(verifyArchitectureEvidenceExport({ manifest: evidence.manifest, payloadJsonl: evidence.payloadJsonl, ...known })).toEqual([]);
+    expect(
+      verifyArchitectureEvidenceExport({
+        manifest: evidence.manifest,
+        payloadJsonl: evidence.payloadJsonl,
+        ...known,
+      }),
+    ).toEqual([]);
     const tampered = evidence.payloadJsonl.replace("append-only", "append_only");
     expect(tampered).not.toBe(evidence.payloadJsonl);
-    const problems = verifyArchitectureEvidenceExport({ manifest: evidence.manifest, payloadJsonl: tampered, ...known });
+    const problems = verifyArchitectureEvidenceExport({
+      manifest: evidence.manifest,
+      payloadJsonl: tampered,
+      ...known,
+    });
     expect(problems.some((problem) => problem.includes("artifact hash"))).toBe(true);
     // A record promoted to verified authority is refused: the contract is that
     // no record ever claims more than the document declared.
-    const promoted = evidence.payloadJsonl.replace('"authority_verified":false', '"authority_verified":true');
-    const promotedProblems = verifyArchitectureEvidenceExport({ manifest: evidence.manifest, payloadJsonl: promoted, ...known });
+    const promoted = evidence.payloadJsonl.replace(
+      '"authority_verified":false',
+      '"authority_verified":true',
+    );
+    const promotedProblems = verifyArchitectureEvidenceExport({
+      manifest: evidence.manifest,
+      payloadJsonl: promoted,
+      ...known,
+    });
     expect(promotedProblems.some((problem) => problem.includes("authority_verified"))).toBe(true);
   });
 });
@@ -559,7 +669,10 @@ describe("a declaration outside the grammar is a diagnostic, never an invented m
     const root = corpusRoot();
     const result = await scan(root);
     const manifest = result.architectureEvidence?.manifest;
-    const sparse = manifest?.diagnostics.filter((diagnostic) => diagnostic.source_path === "plans/sparse-notes.md") ?? [];
+    const sparse =
+      manifest?.diagnostics.filter(
+        (diagnostic) => diagnostic.source_path === "plans/sparse-notes.md",
+      ) ?? [];
     expect(sparse.map((diagnostic) => diagnostic.code).sort()).toEqual([
       "architecture_evidence.empty_declaration",
       "architecture_evidence.secret_value_suppressed",
@@ -579,12 +692,38 @@ describe("a declaration outside the grammar is a diagnostic, never an invented m
 
   it("reads a label list that continues inside its own block, and a section that a code block ends", () => {
     const reading = readArchitectureStatements([
-      { block_id: "b1", kind: "paragraph", text: "Constraints:\nNo network.\nNo clock.", locator: { kind: "line_span", line_start: 4, line_end: 6 } },
-      { block_id: "b2", kind: "heading", text: "Decisions", locator: { kind: "line_span", line_start: 8, line_end: 8 } },
-      { block_id: "b3", kind: "code", text: "Decision: not this one", locator: { kind: "line_span", line_start: 10, line_end: 12 } },
-      { block_id: "b4", kind: "paragraph", text: "Nor this one.", locator: { kind: "line_span", line_start: 14, line_end: 14 } },
+      {
+        block_id: "b1",
+        kind: "paragraph",
+        text: "Constraints:\nNo network.\nNo clock.",
+        locator: { kind: "line_span", line_start: 4, line_end: 6 },
+      },
+      {
+        block_id: "b2",
+        kind: "heading",
+        text: "Decisions",
+        locator: { kind: "line_span", line_start: 8, line_end: 8 },
+      },
+      {
+        block_id: "b3",
+        kind: "code",
+        text: "Decision: not this one",
+        locator: { kind: "line_span", line_start: 10, line_end: 12 },
+      },
+      {
+        block_id: "b4",
+        kind: "paragraph",
+        text: "Nor this one.",
+        locator: { kind: "line_span", line_start: 14, line_end: 14 },
+      },
     ]);
-    expect(reading.statements.map((statement) => [statement.statement_class, statement.declared_text, statement.unit_index])).toEqual([
+    expect(
+      reading.statements.map((statement) => [
+        statement.statement_class,
+        statement.declared_text,
+        statement.unit_index,
+      ]),
+    ).toEqual([
       ["constraint", "No network.", 1],
       ["constraint", "No clock.", 2],
     ]);
@@ -595,7 +734,12 @@ describe("a declaration outside the grammar is a diagnostic, never an invented m
 
   it("drops a statement whose text resembles a credential and says so", () => {
     const reading = readArchitectureStatements([
-      { block_id: "b1", kind: "paragraph", text: "Decision: token = placeholder-value-never-issued", locator: { kind: "line_span", line_start: 1, line_end: 1 } },
+      {
+        block_id: "b1",
+        kind: "paragraph",
+        text: "Decision: token = placeholder-value-never-issued",
+        locator: { kind: "line_span", line_start: 1, line_end: 1 },
+      },
     ]);
     expect(reading.statements).toEqual([]);
     expect(reading.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([

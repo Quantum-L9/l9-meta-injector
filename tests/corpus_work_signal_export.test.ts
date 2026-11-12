@@ -15,16 +15,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { MAX_LISTED_SIGNALS_PER_FORMAT } from "../src/corpus_document_signals";
+import type { CorpusScanResult } from "../src/corpus_scan";
+import { runCorpusScan } from "../src/corpus_scan";
+import type { DocumentWorkSignalRecord } from "../src/corpus_work_signal_export";
 import {
+  buildDocumentWorkSignalExport,
   DOCUMENT_WORK_SIGNALS_MANIFEST_SCHEMA,
   DOCUMENT_WORK_SIGNALS_SCHEMA,
-  buildDocumentWorkSignalExport,
   verifyDocumentWorkSignalExport,
 } from "../src/corpus_work_signal_export";
-import type { DocumentWorkSignalRecord } from "../src/corpus_work_signal_export";
-import { MAX_LISTED_SIGNALS_PER_FORMAT } from "../src/corpus_document_signals";
-import { runCorpusScan } from "../src/corpus_scan";
-import type { CorpusScanResult } from "../src/corpus_scan";
 import {
   writeDocx,
   writeHtml,
@@ -86,12 +86,15 @@ describe("a format with more signals than the report will list", () => {
       producerVersion: "test",
     });
 
-    const xlsx = result.documentSignals.block_signals.by_format
-      .find((entry) => entry.format === "xlsx");
+    const xlsx = result.documentSignals.block_signals.by_format.find(
+      (entry) => entry.format === "xlsx",
+    );
     expect(xlsx?.signal_count).toBeGreaterThanOrEqual(137);
     // The report is bounded, and says so rather than implying it.
     expect(xlsx?.listed_signal_count).toBe(MAX_LISTED_SIGNALS_PER_FORMAT);
-    expect(xlsx?.omitted_signal_count).toBe((xlsx?.signal_count ?? 0) - MAX_LISTED_SIGNALS_PER_FORMAT);
+    expect(xlsx?.omitted_signal_count).toBe(
+      (xlsx?.signal_count ?? 0) - MAX_LISTED_SIGNALS_PER_FORMAT,
+    );
     expect(xlsx?.omitted_signal_count).toBeGreaterThan(0);
 
     // The payload is not.
@@ -120,8 +123,9 @@ describe("a format with more signals than the report will list", () => {
     for (const entry of result.documentSignals.block_signals.by_format) {
       const inPayload = records.filter((record) => record.format === entry.format);
       expect(inPayload, `${entry.format} in payload`).toHaveLength(entry.signal_count);
-      const inManifest = result.documentWorkSignals.manifest.by_format
-        .find((format) => format.format === entry.format);
+      const inManifest = result.documentWorkSignals.manifest.by_format.find(
+        (format) => format.format === entry.format,
+      );
       expect(inManifest?.signal_count, `${entry.format} in manifest`).toBe(entry.signal_count);
     }
   });
@@ -147,7 +151,13 @@ describe("a corpus of every format", () => {
       { title: "Quarterly Roadmap", bullets: ["Status: complete"], notes: "Blocked by: legal" },
     ]);
     writeXlsx(path.join(root, "budget.xlsx"), [
-      { name: "Costs", rows: [["Item", "State"], ["Hosting", "Status: planned"]] },
+      {
+        name: "Costs",
+        rows: [
+          ["Item", "State"],
+          ["Hosting", "Status: planned"],
+        ],
+      },
     ]);
     writeNotebook(path.join(root, "study.ipynb"), {
       title: "Latency Study",
@@ -182,8 +192,15 @@ describe("a corpus of every format", () => {
 
     // Seven decoded formats state something; Markdown states its through the
     // line-based reader and is therefore absent from this payload by design.
-    expect([...new Set(records.map((record) => record.format))].sort())
-      .toEqual(["csv", "docx", "html", "ipynb", "pdf", "pptx", "xlsx"]);
+    expect([...new Set(records.map((record) => record.format))].sort()).toEqual([
+      "csv",
+      "docx",
+      "html",
+      "ipynb",
+      "pdf",
+      "pptx",
+      "xlsx",
+    ]);
   });
 
   it("binds every record to something the corpus actually contains", async () => {
@@ -275,10 +292,12 @@ describe("the payload is a function of the corpus, not of where it was written",
 
     expect(second.documentWorkSignals.payloadJsonl).toBe(first.documentWorkSignals.payloadJsonl);
     expect(second.documentWorkSignals.manifestJson).toBe(first.documentWorkSignals.manifestJson);
-    expect(second.documentWorkSignals.manifest.payload_artifact_hash)
-      .toBe(first.documentWorkSignals.manifest.payload_artifact_hash);
-    expect(second.documentWorkSignals.manifest.payload_semantic_hash)
-      .toBe(first.documentWorkSignals.manifest.payload_semantic_hash);
+    expect(second.documentWorkSignals.manifest.payload_artifact_hash).toBe(
+      first.documentWorkSignals.manifest.payload_artifact_hash,
+    );
+    expect(second.documentWorkSignals.manifest.payload_semantic_hash).toBe(
+      first.documentWorkSignals.manifest.payload_semantic_hash,
+    );
   });
 
   it("emits the same bytes for the same bytes mounted somewhere else", async () => {
@@ -306,8 +325,9 @@ describe("the payload is a function of the corpus, not of where it was written",
     });
 
     expect(second.documentWorkSignals.payloadJsonl).toBe(first.documentWorkSignals.payloadJsonl);
-    expect(second.documentWorkSignals.records.map((record) => record.signal_id))
-      .toEqual(first.documentWorkSignals.records.map((record) => record.signal_id));
+    expect(second.documentWorkSignals.records.map((record) => record.signal_id)).toEqual(
+      first.documentWorkSignals.records.map((record) => record.signal_id),
+    );
   });
 
   it("renders one record per line, canonically, with a final newline", async () => {
@@ -359,27 +379,32 @@ describe("the manifest is a receipt, not a description", () => {
     ...over,
   });
 
-  const built = (records: DocumentWorkSignalRecord[]) => buildDocumentWorkSignalExport({
-    corpusSourceSnapshotId: "corpus-source-snapshot:x",
-    corpusAnalysisId: "corpus-analysis:y",
-    profile: { profile_id: "p", profile_version: "1.0.0", profile_hash: "sha256:p" },
-    records,
-  });
+  const built = (records: DocumentWorkSignalRecord[]) =>
+    buildDocumentWorkSignalExport({
+      corpusSourceSnapshotId: "corpus-source-snapshot:x",
+      corpusAnalysisId: "corpus-analysis:y",
+      profile: { profile_id: "p", profile_version: "1.0.0", profile_hash: "sha256:p" },
+      records,
+    });
 
   const verify = (
     exported: ReturnType<typeof built>,
     payload: string,
     reportCount = exported.manifest.record_count,
-  ) => verifyDocumentWorkSignalExport({
-    manifest: exported.manifest,
-    payloadJsonl: payload,
-    knownArtifactIds: new Set(["artifact:one", "artifact:two"]),
-    knownNormalizedDocumentIds: new Set(["normdoc:cc"]),
-    reportSignalCount: reportCount,
-  });
+  ) =>
+    verifyDocumentWorkSignalExport({
+      manifest: exported.manifest,
+      payloadJsonl: payload,
+      knownArtifactIds: new Set(["artifact:one", "artifact:two"]),
+      knownNormalizedDocumentIds: new Set(["normdoc:cc"]),
+      reportSignalCount: reportCount,
+    });
 
   it("accepts a payload that matches its manifest", () => {
-    const exported = built([record(), record({ signal_id: "document_assertion:bbb", block_id: "block:2" })]);
+    const exported = built([
+      record(),
+      record({ signal_id: "document_assertion:bbb", block_id: "block:2" }),
+    ]);
     expect(exported.manifest.schema).toBe(DOCUMENT_WORK_SIGNALS_MANIFEST_SCHEMA);
     expect(verify(exported, exported.payloadJsonl)).toEqual([]);
   });
@@ -393,10 +418,15 @@ describe("the manifest is a receipt, not a description", () => {
   });
 
   it("refuses a payload short one record whose manifest still counts it", () => {
-    const exported = built([record(), record({ signal_id: "document_assertion:bbb", block_id: "block:2" })]);
+    const exported = built([
+      record(),
+      record({ signal_id: "document_assertion:bbb", block_id: "block:2" }),
+    ]);
     const lines = exported.payloadJsonl.split("\n").filter((line) => line.length > 0);
     const problems = verify(exported, `${lines[0]}\n`);
-    expect(problems.some((problem) => problem.includes("2 record(s) and the payload carries 1"))).toBe(true);
+    expect(
+      problems.some((problem) => problem.includes("2 record(s) and the payload carries 1")),
+    ).toBe(true);
   });
 
   it("refuses a duplicate signal id at build time", () => {
@@ -419,7 +449,9 @@ describe("the manifest is a receipt, not a description", () => {
   it("refuses a signal naming an artifact the corpus does not have", () => {
     const exported = built([record({ artifact_id: "artifact:ghost" })]);
     const problems = verify(exported, exported.payloadJsonl);
-    expect(problems.some((problem) => problem.includes("which this corpus did not observe"))).toBe(true);
+    expect(problems.some((problem) => problem.includes("which this corpus did not observe"))).toBe(
+      true,
+    );
   });
 
   it("refuses a signal naming a normalized document the corpus did not produce", () => {
@@ -434,21 +466,27 @@ describe("the manifest is a receipt, not a description", () => {
     expect(problems.some((problem) => problem.includes("the sampled report states 9"))).toBe(true);
   });
 
-  const three = () => built([
-    record(),
-    record({ signal_id: "document_assertion:bbb", block_id: "block:2" }),
-    record({ signal_id: "document_assertion:ccc", block_id: "block:3", artifact_id: "artifact:two" }),
-  ]);
+  const three = () =>
+    built([
+      record(),
+      record({ signal_id: "document_assertion:bbb", block_id: "block:2" }),
+      record({
+        signal_id: "document_assertion:ccc",
+        block_id: "block:3",
+        artifact_id: "artifact:two",
+      }),
+    ]);
   const verifyManifest = (
     exported: ReturnType<typeof built>,
     manifest: ReturnType<typeof built>["manifest"],
-  ) => verifyDocumentWorkSignalExport({
-    manifest,
-    payloadJsonl: exported.payloadJsonl,
-    knownArtifactIds: new Set(["artifact:one", "artifact:two"]),
-    knownNormalizedDocumentIds: new Set(["normdoc:cc"]),
-    reportSignalCount: manifest.record_count,
-  });
+  ) =>
+    verifyDocumentWorkSignalExport({
+      manifest,
+      payloadJsonl: exported.payloadJsonl,
+      knownArtifactIds: new Set(["artifact:one", "artifact:two"]),
+      knownNormalizedDocumentIds: new Set(["normdoc:cc"]),
+      reportSignalCount: manifest.record_count,
+    });
 
   it("REG-WU-056-RC-092-a: refuses a manifest whose document_count the records do not support", () => {
     const exported = three();
@@ -528,9 +566,11 @@ describe("the snapshot", () => {
     expect(reference?.payload_ref).toBe("document-work-signals.jsonl");
     expect(reference?.manifest_ref).toBe("document-work-signals.manifest.json");
     expect(reference?.record_count).toBe(result.documentWorkSignals.manifest.record_count);
-    expect(reference?.payload_artifact_hash)
-      .toBe(result.documentWorkSignals.manifest.payload_artifact_hash);
-    expect(reference?.payload_semantic_hash)
-      .toBe(result.documentWorkSignals.manifest.payload_semantic_hash);
+    expect(reference?.payload_artifact_hash).toBe(
+      result.documentWorkSignals.manifest.payload_artifact_hash,
+    );
+    expect(reference?.payload_semantic_hash).toBe(
+      result.documentWorkSignals.manifest.payload_semantic_hash,
+    );
   });
 });

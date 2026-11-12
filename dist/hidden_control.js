@@ -5,8 +5,13 @@ exports.canTraverseHiddenControl = canTraverseHiddenControl;
 /** Internal admission for explicitly named, harmless repository controls. */
 const glob_1 = require("./glob");
 const CONTROL_BASENAMES = new Set([
-    ".gitignore", ".gitattributes", ".editorconfig",
-    ".pre-commit-config.yaml", ".pre-commit-config.yml", ".env.example", ".l9metaignore",
+    ".gitignore",
+    ".gitattributes",
+    ".editorconfig",
+    ".pre-commit-config.yaml",
+    ".pre-commit-config.yml",
+    ".env.example",
+    ".l9metaignore",
 ]);
 function namesControl(pattern, control) {
     const segments = pattern.split("/");
@@ -32,7 +37,9 @@ function explicitHiddenControlPattern(relativePath, patterns) {
         else if (segments[1] === "CODEOWNERS" && segments.length === 2)
             control = ".github/CODEOWNERS";
     }
-    return control === undefined ? undefined : patterns.find((pattern) => namesControl(pattern, control) && (0, glob_1.globToRegExp)(pattern).test(relativePath));
+    return control === undefined
+        ? undefined
+        : patterns.find((pattern) => namesControl(pattern, control) && (0, glob_1.globToRegExp)(pattern).test(relativePath));
 }
 /** Traverse only the root .github control subtree, never arbitrary dot directories. */
 function canTraverseHiddenControl(relativePath, patterns) {
@@ -43,6 +50,7 @@ function canTraverseHiddenControl(relativePath, patterns) {
     if (segments.length === 1) {
         return patterns.some((pattern) => namesControl(pattern, ".github/workflows") || namesControl(pattern, ".github/CODEOWNERS"));
     }
-    return segments[1] === "workflows" && patterns.some((pattern) => namesControl(pattern, ".github/workflows"));
+    return (segments[1] === "workflows" &&
+        patterns.some((pattern) => namesControl(pattern, ".github/workflows")));
 }
 //# sourceMappingURL=hidden_control.js.map

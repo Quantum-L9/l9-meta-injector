@@ -88,20 +88,30 @@ describe("identical bytes under two decoder dialects", () => {
     expect(byPath.get("d.tsv")?.format).toBe("csv");
     expect(byPath.get("d.tsv")?.block_count).not.toBe(byPath.get("c.csv")?.block_count);
     // The status cell exists only when the row is split on tabs.
-    expect(warm.signals.some((s) => s.includes("d.tsv") && s.includes("work.status=blocked"))).toBe(true);
+    expect(warm.signals.some((s) => s.includes("d.tsv") && s.includes("work.status=blocked"))).toBe(
+      true,
+    );
   });
 
   it("REG-WU-039-RC-067-b: decode the same however many decoders run at once", async () => {
     const root = writeDialectCorpus();
     const roots = [{ path: root, name: "R" }];
-    const serial = decodedView(await runCorpusScan({
-      roots, producerVersion: PRODUCER, cache: new MemoryCorpusCache(PRODUCER),
-      budgets: { max_parallel_decoders: 1 },
-    }));
-    const parallel = decodedView(await runCorpusScan({
-      roots, producerVersion: PRODUCER, cache: new MemoryCorpusCache(PRODUCER),
-      budgets: { max_parallel_decoders: 8 },
-    }));
+    const serial = decodedView(
+      await runCorpusScan({
+        roots,
+        producerVersion: PRODUCER,
+        cache: new MemoryCorpusCache(PRODUCER),
+        budgets: { max_parallel_decoders: 1 },
+      }),
+    );
+    const parallel = decodedView(
+      await runCorpusScan({
+        roots,
+        producerVersion: PRODUCER,
+        cache: new MemoryCorpusCache(PRODUCER),
+        budgets: { max_parallel_decoders: 8 },
+      }),
+    );
     const uncached = decodedView(await runCorpusScan({ roots, producerVersion: PRODUCER }));
     expect(parallel).toEqual(serial);
     expect(serial).toEqual(uncached);
@@ -109,9 +119,13 @@ describe("identical bytes under two decoder dialects", () => {
 
   it("REG-WU-039-RC-067-d: carry different normalized document ids", async () => {
     const root = writeDialectCorpus();
-    const result = await runCorpusScan({ roots: [{ path: root, name: "R" }], producerVersion: PRODUCER });
+    const result = await runCorpusScan({
+      roots: [{ path: root, name: "R" }],
+      producerVersion: PRODUCER,
+    });
     const id = (name: string) =>
-      result.documentIndex.documents.find((d) => d.root_relative_path === name)?.normalized_document_id;
+      result.documentIndex.documents.find((d) => d.root_relative_path === name)
+        ?.normalized_document_id;
     expect(id("a.md")).toBeTruthy();
     expect(id("a.md")).not.toBe(id("b.txt"));
     expect(id("c.csv")).not.toBe(id("d.tsv"));
@@ -126,7 +140,9 @@ describe("identical bytes under one dialect", () => {
     fs.writeFileSync(path.join(root, "y.md"), MARKDOWN, "utf8");
     const cache = new MemoryCorpusCache(PRODUCER);
     const result = await runCorpusScan({
-      roots: [{ path: root, name: "R" }], producerVersion: PRODUCER, cache,
+      roots: [{ path: root, name: "R" }],
+      producerVersion: PRODUCER,
+      cache,
       budgets: { max_parallel_decoders: 1 },
     });
     // One entry: the first lookup misses and the second, under the same key, hits.
@@ -145,19 +161,28 @@ describe("identical bytes under one dialect", () => {
 describe("decoders that declare no dialect", () => {
   it("REG-WU-039-RC-067-e: keep the normalized document id computed without one", async () => {
     const root = tmp();
-    writeDocx(path.join(root, "brief.docx"), { title: "Gamma", headings: ["Scope"], paragraphs: ["Status: draft"] });
+    writeDocx(path.join(root, "brief.docx"), {
+      title: "Gamma",
+      headings: ["Scope"],
+      paragraphs: ["Status: draft"],
+    });
     writePdf(path.join(root, "report.pdf"), ["Delta report", "Status: blocked"]);
-    const result = await runCorpusScan({ roots: [{ path: root, name: "R" }], producerVersion: PRODUCER });
+    const result = await runCorpusScan({
+      roots: [{ path: root, name: "R" }],
+      producerVersion: PRODUCER,
+    });
     const registry = defaultDecoderRegistry();
     for (const name of ["brief.docx", "report.pdf"]) {
       const entry = result.documentIndex.documents.find((d) => d.root_relative_path === name);
       const decoder = registry.forPath(name);
       expect(decoder?.dialectFor?.(name)).toBeUndefined();
-      expect(entry?.normalized_document_id).toBe(normalizedDocumentKey({
-        contentHash: entry?.content_hash as string,
-        decoderId: decoder?.id as string,
-        decoderVersion: decoder?.version as string,
-      }));
+      expect(entry?.normalized_document_id).toBe(
+        normalizedDocumentKey({
+          contentHash: entry?.content_hash as string,
+          decoderId: decoder?.id as string,
+          decoderVersion: decoder?.version as string,
+        }),
+      );
     }
   });
 });

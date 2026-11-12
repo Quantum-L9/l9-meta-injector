@@ -19,13 +19,13 @@ const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "check-cli");
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "check-cli");
 
-const usage = "usage: node scripts/check-cli.js <root> [--glob PATTERN] [--report FILE] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--near-dup 0..1] [--hash-prefix-length N] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH]";
+const usage =
+  "usage: node scripts/check-cli.js <root> [--glob PATTERN] [--report FILE] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--near-dup 0..1] [--hash-prefix-length N] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH]";
 const { root, flag, opt, optAll } = parseCli("check-cli", usage);
 const targetRoot = path.resolve(root);
-const reportPath = path.resolve(opt(
-  "--report",
-  path.join(os.tmpdir(), `l9-meta-injector-check-${process.pid}.json`),
-));
+const reportPath = path.resolve(
+  opt("--report", path.join(os.tmpdir(), `l9-meta-injector-check-${process.pid}.json`)),
+);
 
 function isWithin(parent, candidate) {
   const relative = path.relative(parent, candidate);
@@ -86,23 +86,26 @@ const config = {
 };
 
 console.error(`check-cli: evaluating ${targetRoot} without mutation ...`);
-pkg.runCheckAsync(config).then((operation) => {
-  const check = operation.check;
-  if (!check) throw new Error("check operation returned no CheckResult");
+pkg
+  .runCheckAsync(config)
+  .then((operation) => {
+    const check = operation.check;
+    if (!check) throw new Error("check operation returned no CheckResult");
 
-  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-  fs.writeFileSync(reportPath, `${JSON.stringify(operation, null, 2)}\n`, "utf8");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, `${JSON.stringify(operation, null, 2)}\n`, "utf8");
 
-  console.log(
-    `check-cli: scanned=${check.scanned} planned=${check.planned} drift=${check.drift.length} ` +
-    `authorityConflicts=${check.authorityConflicts.length} passed=${check.passed}`,
-  );
-  // Drift kind, path, message, and every authority conflict code — deterministically
-  // ordered, so a failing gate is diagnosable from its output alone.
-  for (const line of renderCheck("check-cli", check, operation.warnings)) console.log(line);
-  console.log(`check-cli: report=${reportPath}`);
-  process.exit(check.passed ? 0 : 1);
-}).catch((error) => {
-  for (const line of renderThrow("check-cli", error)) console.error(line);
-  process.exit(2);
-});
+    console.log(
+      `check-cli: scanned=${check.scanned} planned=${check.planned} drift=${check.drift.length} ` +
+        `authorityConflicts=${check.authorityConflicts.length} passed=${check.passed}`,
+    );
+    // Drift kind, path, message, and every authority conflict code — deterministically
+    // ordered, so a failing gate is diagnosable from its output alone.
+    for (const line of renderCheck("check-cli", check, operation.warnings)) console.log(line);
+    console.log(`check-cli: report=${reportPath}`);
+    process.exit(check.passed ? 0 : 1);
+  })
+  .catch((error) => {
+    for (const line of renderThrow("check-cli", error)) console.error(line);
+    process.exit(2);
+  });

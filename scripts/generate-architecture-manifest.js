@@ -15,7 +15,12 @@
 //   (none)    print the computed manifest to stdout. Nothing is written to disk.
 const fs = require("node:fs");
 const path = require("node:path");
-const { REPO, RETIRED_MANIFEST, buildManifest, stableJson } = require("./lib/architecture-authority");
+const {
+  REPO,
+  RETIRED_MANIFEST,
+  buildManifest,
+  stableJson,
+} = require("./lib/architecture-authority");
 
 function fail(message) {
   console.error(`architecture-manifest: FAILED: ${message}`);
@@ -31,9 +36,13 @@ try {
 
 if (process.argv.includes("--check")) {
   if (fs.existsSync(path.join(REPO, RETIRED_MANIFEST))) {
-    fail(`${RETIRED_MANIFEST} is retired (ADR-093); delete it — the manifest is computed, never committed`);
+    fail(
+      `${RETIRED_MANIFEST} is retired (ADR-093); delete it — the manifest is computed, never committed`,
+    );
   }
-  console.log(`architecture-manifest: OK (${manifest.entries.length} authority-critical files computed from the tree)`);
+  console.log(
+    `architecture-manifest: OK (${manifest.entries.length} authority-critical files computed from the tree)`,
+  );
 } else {
   process.stdout.write(stableJson(manifest));
 }

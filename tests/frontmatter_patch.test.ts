@@ -11,20 +11,27 @@ describe("byte-preserving managed frontmatter", () => {
   });
 
   test("preserves BOM, CRLF, comments, order, unrelated fields, and body", () => {
-    const raw = "\uFEFF---\r\n# owner note\r\nowner: 'alice'\r\ndescription: old  # keep this comment\r\ntags:\r\n  # list note\r\n  - one\r\n  - two\r\n\r\n---\r\n# Body\r\n";
+    const raw =
+      "\uFEFF---\r\n# owner note\r\nowner: 'alice'\r\ndescription: old  # keep this comment\r\ntags:\r\n  # list note\r\n  - one\r\n  - two\r\n\r\n---\r\n# Body\r\n";
     const result = patchManagedFrontMatter(raw, { description: "new", tags: ["x", "y"] });
     expect(result.safe).toBe(true);
     expect(result.content.startsWith("\uFEFF---\r\n")).toBe(true);
     expect(result.content).toContain("# owner note\r\nowner: 'alice'\r\n");
     expect(result.content).toContain('description: "new"  # keep this comment\r\n');
-    expect(result.content).toContain("tags:\r\n  # list note\r\n  - \"x\"\r\n  - \"y\"\r\n\r\n");
+    expect(result.content).toContain('tags:\r\n  # list note\r\n  - "x"\r\n  - "y"\r\n\r\n');
     expect(result.body).toBe("# Body\r\n");
     expect(result.content.endsWith(result.body)).toBe(true);
   });
 
   test("is byte-idempotent", () => {
-    const once = patchManagedFrontMatter("# Body\n", { description: "same", activation_signals: ["a", "b"] });
-    const twice = patchManagedFrontMatter(once.content, { description: "same", activation_signals: ["a", "b"] });
+    const once = patchManagedFrontMatter("# Body\n", {
+      description: "same",
+      activation_signals: ["a", "b"],
+    });
+    const twice = patchManagedFrontMatter(once.content, {
+      description: "same",
+      activation_signals: ["a", "b"],
+    });
     expect(once.safe).toBe(true);
     expect(twice.safe).toBe(true);
     expect(twice.changed).toBe(false);
@@ -34,7 +41,7 @@ describe("byte-preserving managed frontmatter", () => {
   test("appends missing managed fields before the closing fence", () => {
     const raw = "---\nowner: bob\n---\nBody";
     const result = patchManagedFrontMatter(raw, { description: "d", active: false });
-    expect(result.content).toBe("---\nowner: bob\ndescription: \"d\"\nactive: false\n---\nBody");
+    expect(result.content).toBe('---\nowner: bob\ndescription: "d"\nactive: false\n---\nBody');
   });
 
   test.each([
@@ -47,7 +54,11 @@ describe("byte-preserving managed frontmatter", () => {
     ["duplicate block", "---\na: 1\n---\n\n---\nb: 2\n---\nBody", "FRONTMATTER_DUPLICATE_BLOCK"],
     ["mixed newline", "---\r\na: 1\n---\r\nBody", "FRONTMATTER_MIXED_NEWLINES"],
     ["tab", "---\na:\t1\n---\nBody", "FRONTMATTER_TAB_CHARACTER"],
-    ["interleaved list comment", "---\na:\n  - one\n  # between\n  - two\n---\nBody", "FRONTMATTER_COMPLEX_YAML"],
+    [
+      "interleaved list comment",
+      "---\na:\n  - one\n  # between\n  - two\n---\nBody",
+      "FRONTMATTER_COMPLEX_YAML",
+    ],
   ])("fails closed for %s", (_name, raw, code) => {
     const result = patchManagedFrontMatter(raw, { description: "new" });
     expect(result.safe).toBe(false);
@@ -57,9 +68,12 @@ describe("byte-preserving managed frontmatter", () => {
   });
 
   test("preserves inline comments and all bytes outside managed values", () => {
-    const raw = "---\n# before\nowner: bob # owner\ndescription: old   # description\n# after\n---\n\nBody\n";
+    const raw =
+      "---\n# before\nowner: bob # owner\ndescription: old   # description\n# after\n---\n\nBody\n";
     const result = patchManagedFrontMatter(raw, { description: "new" });
-    expect(result.content).toBe("---\n# before\nowner: bob # owner\ndescription: \"new\"   # description\n# after\n---\n\nBody\n");
+    expect(result.content).toBe(
+      '---\n# before\nowner: bob # owner\ndescription: "new"   # description\n# after\n---\n\nBody\n',
+    );
   });
 
   test("inspection returns existing safe fields without normalizing bytes", () => {
@@ -113,7 +127,11 @@ describe("AUDIT G04 — a bracket counts as flow only at a scalar start (INV-022
   // pin that the refusal leaves the bytes untouched and that real flow lists still
   // keep their comment.
   test("REG-AUDIT-G04-a: a mid-word '[' or a stray ']' is refused and the document is left byte-identical", () => {
-    for (const raw of ["---\ntitle: a[b # keep\nowner: bob\n---\nBody\n", "---\ntitle: a]b # keep\n---\nBody\n", "---\ntitle: a['b # keep\n---\nBody\n"]) {
+    for (const raw of [
+      "---\ntitle: a[b # keep\nowner: bob\n---\nBody\n",
+      "---\ntitle: a]b # keep\n---\nBody\n",
+      "---\ntitle: a['b # keep\n---\nBody\n",
+    ]) {
       const inspected = inspectFrontMatterDocument(raw);
       expect(inspected.safe, raw).toBe(false);
       expect(inspected.issue?.code, raw).toBe("FRONTMATTER_COMPLEX_YAML");

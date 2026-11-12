@@ -15,7 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { runApplyAsync } from "../src/apply";
-import { runCheckAsync, type CheckConfig } from "../src/check";
+import { type CheckConfig, runCheckAsync } from "../src/check";
 import { inspectFrontMatterDocument, patchManagedFrontMatter } from "../src/frontmatter_patch";
 import type { CarrierDecision } from "../src/operation_contracts";
 
@@ -102,7 +102,9 @@ function config(root: string): CheckConfig {
 function treeHash(root: string): string {
   const hash = createHash("sha256");
   const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const full = path.join(dir, entry.name);
       hash.update(`${entry.isDirectory() ? "d" : "f"}:${path.relative(root, full)}\0`);
       if (entry.isDirectory()) walk(full);
@@ -138,7 +140,10 @@ describe("an unquoted ISO timestamp is preserved, not fatal", () => {
   });
 
   test("patching unrelated managed fields leaves the timestamp byte-identical", () => {
-    const patched = patchManagedFrontMatter(ISO_TIMESTAMP_DOC, { id: "artifact-1", artifact_type: "prompt" });
+    const patched = patchManagedFrontMatter(ISO_TIMESTAMP_DOC, {
+      id: "artifact-1",
+      artifact_type: "prompt",
+    });
     expect(patched.safe).toBe(true);
     expect(patched.content).toContain("created: 2025-10-28T15:30:00Z");
     expect(patched.content).toContain('id: "artifact-1"');
@@ -150,7 +155,9 @@ describe("an unquoted ISO timestamp is preserved, not fatal", () => {
     write(root, "runbook.md", ISO_TIMESTAMP_DOC);
     const result = await runApplyAsync(config(root));
     expect(result.passed).toBe(true);
-    expect(fs.readFileSync(path.join(root, "runbook.md"), "utf8")).toContain("created: 2025-10-28T15:30:00Z");
+    expect(fs.readFileSync(path.join(root, "runbook.md"), "utf8")).toContain(
+      "created: 2025-10-28T15:30:00Z",
+    );
   });
 });
 
@@ -189,7 +196,9 @@ describe("complex frontmatter falls back instead of aborting", () => {
     write(root, "guide.md", PLAIN_DOC);
     const first = await runCheckAsync(config(root));
     const second = await runCheckAsync(config(root));
-    expect(JSON.stringify(second.check?.carrierDecisions)).toBe(JSON.stringify(first.check?.carrierDecisions));
+    expect(JSON.stringify(second.check?.carrierDecisions)).toBe(
+      JSON.stringify(first.check?.carrierDecisions),
+    );
     expect(JSON.stringify(second.check?.drift)).toBe(JSON.stringify(first.check?.drift));
   });
 
@@ -258,7 +267,9 @@ describe("protected skill entrypoints", () => {
 
     expect(result.passed).toBe(true);
     expect(fs.readFileSync(path.join(root, "skills", "deploy", "SKILL.md"), "utf8")).toBe(before);
-    expect(result.apply?.carrierDecisions.map((item) => item.path)).not.toContain("skills/deploy/SKILL.md");
+    expect(result.apply?.carrierDecisions.map((item) => item.path)).not.toContain(
+      "skills/deploy/SKILL.md",
+    );
     expect(result.apply?.inlineChanged).not.toContain("skills/deploy/SKILL.md");
   });
 });

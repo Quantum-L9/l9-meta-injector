@@ -1,5 +1,5 @@
-import { FieldDiff, MetaRecord } from "./schema";
 import { MetricsCollector } from "./metrics";
+import { FieldDiff, MetaRecord } from "./schema";
 export type { FieldDiff, ReconcileAction } from "./schema";
 export interface ReconcileResult {
     merged: MetaRecord;

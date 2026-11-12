@@ -47,13 +47,17 @@ export const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v2";
  * version wrote — and discarded quietly, rather than reported as corrupt once
  * per entry on the first run after an upgrade.
  */
-const PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS: ReadonlySet<string> = new Set(["l9.corpus-cache-entry/v1"]);
+const PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS: ReadonlySet<string> = new Set([
+  "l9.corpus-cache-entry/v1",
+]);
 
 /** True when an entry was written by another producer version or a previous epoch. */
 function isStaleEntry(entry: unknown, producerVersion: string): boolean {
   const record = entry as Partial<CorpusCacheEntry> | null;
   if (record?.producer_version !== producerVersion) return true;
-  return typeof record.schema === "string" && PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS.has(record.schema);
+  return (
+    typeof record.schema === "string" && PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS.has(record.schema)
+  );
 }
 
 /** Environment variable that overrides the default cache location. */
@@ -268,7 +272,8 @@ export function cacheEntryDefect(
 ): string | null {
   if (entry === null || typeof entry !== "object") return "entry is not an object";
   const record = entry as Partial<CorpusCacheEntry>;
-  if (record.schema !== CORPUS_CACHE_ENTRY_SCHEMA) return `unexpected schema '${String(record.schema)}'`;
+  if (record.schema !== CORPUS_CACHE_ENTRY_SCHEMA)
+    return `unexpected schema '${String(record.schema)}'`;
   if (record.layer !== expected.layer) return `entry belongs to layer '${String(record.layer)}'`;
   if (record.key !== expected.key) return "entry key does not match the key it was filed under";
   if (typeof record.producer_version !== "string") return "producer_version is missing";
@@ -329,9 +334,9 @@ class CacheAccounting {
   diagnostics(): CorpusCacheDiagnostic[] {
     return [...this.notes].sort(
       (a, b) =>
-        compareCodePoints(a.code, b.code)
-        || compareCodePoints(a.layer, b.layer)
-        || compareCodePoints(a.key, b.key),
+        compareCodePoints(a.code, b.code) ||
+        compareCodePoints(a.layer, b.layer) ||
+        compareCodePoints(a.key, b.key),
     );
   }
 }
@@ -443,7 +448,8 @@ export interface FileCorpusCacheOptions {
 /** The default cache root: `$L9_CORPUS_CACHE`, else `~/.l9/corpus-cache`. */
 export function defaultCorpusCacheDir(env: NodeJS.ProcessEnv = process.env): string {
   const declared = env[CORPUS_CACHE_ENV];
-  if (typeof declared === "string" && declared.trim().length > 0) return path.resolve(declared.trim());
+  if (typeof declared === "string" && declared.trim().length > 0)
+    return path.resolve(declared.trim());
   return path.join(os.homedir(), ".l9", "corpus-cache");
 }
 
@@ -534,8 +540,9 @@ export class FileCorpusCache implements CorpusCache {
         severity: "warning",
         layer,
         key,
-        message: `entry is not valid JSON (${error instanceof Error ? error.message : String(error)}); `
-          + "the entry was discarded and the value recomputed",
+        message:
+          `entry is not valid JSON (${error instanceof Error ? error.message : String(error)}); ` +
+          "the entry was discarded and the value recomputed",
       });
       this.discard(file);
       return undefined;
@@ -617,7 +624,10 @@ export class FileCorpusCache implements CorpusCache {
  * scans twice would otherwise report the second scan's hit ratio as the average
  * of both. Every reported ratio in this package is a delta taken across one run.
  */
-export function cacheStatsDelta(before: CorpusCacheStats, after: CorpusCacheStats): CorpusCacheStats {
+export function cacheStatsDelta(
+  before: CorpusCacheStats,
+  after: CorpusCacheStats,
+): CorpusCacheStats {
   const beforeByLayer = new Map(before.layers.map((layer) => [layer.layer, layer]));
   const layers = after.layers.map((layer) => {
     const start = beforeByLayer.get(layer.layer);

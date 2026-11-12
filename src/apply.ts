@@ -1,28 +1,32 @@
 /** Governed carrier-aware whole-run transactional apply operation. */
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
 import { inspectRepositoryAuthority } from "./authority_scan";
 import {
   CANONICAL_METADATA_WRITER,
+  type CarrierOperationPlan,
   planCarrierOperationAsync,
   unsatisfiedAuthorizationDrift,
-  type CarrierOperationPlan,
 } from "./carrier_operation";
-import { METADATA_INDEX_RELATIVE_PATH, assertLegacyMetadataIndexWrite, readMetadataIndexBaseBytes } from "./metadata_index";
+import { emptyDiscoverySummary } from "./discovery_contracts";
 import {
   executeFileTransaction,
-  recoverPendingTransactions,
   type FileMutationIntent,
+  recoverPendingTransactions,
 } from "./file_transaction";
-import type { ApplyResult, OperationResult } from "./operation_contracts";
 import { injectFile } from "./inject";
-import { emptyDiscoverySummary } from "./discovery_contracts";
-import { verify } from "./verify";
-import type { InjectionRecord, PipelineConfig } from "./schema";
+import {
+  assertLegacyMetadataIndexWrite,
+  METADATA_INDEX_RELATIVE_PATH,
+  readMetadataIndexBaseBytes,
+} from "./metadata_index";
+import type { ApplyResult, OperationResult } from "./operation_contracts";
 import { compareCodePoints } from "./ordering";
+import type { InjectionRecord, PipelineConfig } from "./schema";
+import { verify } from "./verify";
 
 export interface ApplyConfig extends Omit<PipelineConfig, "dryRun"> {
   dryRun?: false;
@@ -34,7 +38,13 @@ function sha256(bytes: Buffer | string): string {
 
 function relativePath(root: string, target: string): string {
   const rel = path.relative(root, target);
-  if (!rel || rel === "." || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+  if (
+    !rel ||
+    rel === "." ||
+    rel === ".." ||
+    rel.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(rel)
+  ) {
     throw new Error(`apply target escapes or equals repository root: ${target}`);
   }
   return rel.split(path.sep).join("/");
@@ -86,10 +96,16 @@ function renderInlineBytes(root: string, planned: InjectionRecord, outDir: strin
   if (!planned.targetPath || planned.targetPath !== planned.sourcePath) {
     throw new Error(`inline mutation target must equal source: ${planned.sourcePath}`);
   }
-  if (!planned.expectedContentHash || planned.wouldChange === undefined || planned.targetExists === undefined) {
+  if (
+    !planned.expectedContentHash ||
+    planned.wouldChange === undefined ||
+    planned.targetExists === undefined
+  ) {
     throw new Error(`inline mutation plan is incomplete: ${planned.sourcePath}`);
   }
-  if (!["yaml-frontmatter", "line-comment", "block-comment"].includes(planned.injectionStrategy ?? "")) {
+  if (
+    !["yaml-frontmatter", "line-comment", "block-comment"].includes(planned.injectionStrategy ?? "")
+  ) {
     throw new Error(`unsafe inline mutation strategy: ${planned.sourcePath}`);
   }
   const renderRoot = fs.mkdtempSync(path.join(os.tmpdir(), "l9-meta-render-"));
@@ -103,13 +119,19 @@ function renderInlineBytes(root: string, planned: InjectionRecord, outDir: strin
       writeInjectLog: false,
       writeDryRunDiff: false,
     });
-    if (rendered.injectionStrategy !== planned.injectionStrategy || rendered.sidecarPath || rendered.injectLogPath) {
+    if (
+      rendered.injectionStrategy !== planned.injectionStrategy ||
+      rendered.sidecarPath ||
+      rendered.injectLogPath
+    ) {
       throw new Error(`carrier policy violation while rendering ${planned.sourcePath}`);
     }
     const bytes = fs.readFileSync(renderTarget);
     const actualHash = sha256(bytes);
     if (actualHash !== planned.expectedContentHash) {
-      throw new Error(`APPLY_RENDER_DIVERGENCE: ${relativePath(root, planned.sourcePath)} expected ${planned.expectedContentHash}, rendered ${actualHash}`);
+      throw new Error(
+        `APPLY_RENDER_DIVERGENCE: ${relativePath(root, planned.sourcePath)} expected ${planned.expectedContentHash}, rendered ${actualHash}`,
+      );
     }
     return bytes;
   } finally {
@@ -124,7 +146,11 @@ function currentIntentState(root: string): { expectedExists: boolean; expectedHa
   return { expectedExists: true, expectedHash: base.sha256 };
 }
 
-function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: string): FileMutationIntent[] {
+function buildMutationIntents(
+  root: string,
+  plan: CarrierOperationPlan,
+  outDir: string,
+): FileMutationIntent[] {
   const intents: FileMutationIntent[] = [];
   for (const planned of plan.inlinePlans) {
     if (!planned.wouldChange) continue;
@@ -144,9 +170,12 @@ function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: 
   // A scoped plan merged with a specific existing index (ADR-058): that base is the
   // compare-and-swap expectation, so a concurrent change after planning is refused.
   const base = plan.metadataIndexBase;
-  if (base?.unmergeableReason) throw new Error(`METADATA_INDEX_UNMERGEABLE: ${base.unmergeableReason}`);
+  if (base?.unmergeableReason)
+    throw new Error(`METADATA_INDEX_UNMERGEABLE: ${base.unmergeableReason}`);
   const indexState = base
-    ? (base.exists ? { expectedExists: true, expectedHash: base.sha256 } : { expectedExists: false })
+    ? base.exists
+      ? { expectedExists: true, expectedHash: base.sha256 }
+      : { expectedExists: false }
     : current;
   const desiredIndexHash = sha256(plan.metadataIndex.bytes);
   if (indexState.expectedHash !== desiredIndexHash) {
@@ -163,21 +192,28 @@ function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: 
 function validateCommittedPlan(root: string, plan: CarrierOperationPlan): void {
   for (const planned of plan.inlinePlans) {
     if (!planned.wouldChange) continue;
-    if (!planned.targetPath || !planned.expectedContentHash) throw new Error(`inline validation plan incomplete: ${planned.sourcePath}`);
+    if (!planned.targetPath || !planned.expectedContentHash)
+      throw new Error(`inline validation plan incomplete: ${planned.sourcePath}`);
     const actualHash = sha256(fs.readFileSync(planned.targetPath));
     if (actualHash !== planned.expectedContentHash) {
-      throw new Error(`APPLY_POSTCONDITION_FAILED: ${relativePath(root, planned.sourcePath)} hash mismatch`);
+      throw new Error(
+        `APPLY_POSTCONDITION_FAILED: ${relativePath(root, planned.sourcePath)} hash mismatch`,
+      );
     }
     const verified = verify(planned.sourcePath, planned.originalBodyHash, planned.meta, {
       semanticallyBound: plan.authority.product !== undefined,
     });
     if (verified.issues.length > 0) {
-      throw new Error(`APPLY_VERIFICATION_FAILED: ${relativePath(root, planned.sourcePath)}: ${verified.issues.join("; ")}`);
+      throw new Error(
+        `APPLY_VERIFICATION_FAILED: ${relativePath(root, planned.sourcePath)}: ${verified.issues.join("; ")}`,
+      );
     }
   }
   const index = readMetadataIndexBaseBytes(root);
   if (!index.exists || index.raw.toString("utf8") !== plan.metadataIndex.bytes) {
-    throw new Error("APPLY_POSTCONDITION_FAILED: canonical metadata index differs from planned bytes");
+    throw new Error(
+      "APPLY_POSTCONDITION_FAILED: canonical metadata index differs from planned bytes",
+    );
   }
 }
 
@@ -196,8 +232,12 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   if (inspection.conflicts.length > 0 || !inspection.authority) {
     return authorityFailure(inspection.conflicts, inspection.notices, warnings);
   }
-  if (config.localFiles) throw new Error("apply does not expand archives; local-files requires a separate import workflow");
-  if (config.normalizeFilenames) throw new Error("apply does not normalize filenames; rename work must be reviewed separately");
+  if (config.localFiles)
+    throw new Error(
+      "apply does not expand archives; local-files requires a separate import workflow",
+    );
+  if (config.normalizeFilenames)
+    throw new Error("apply does not normalize filenames; rename work must be reviewed separately");
 
   const plan = await planCarrierOperationAsync({
     mode: "apply",
@@ -213,11 +253,15 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
     },
   });
   if (plan.pipeline.coverage.discovery.blocking > 0) {
-    throw new Error(`DISCOVERY_INCOMPLETE: apply refused with ${plan.pipeline.coverage.discovery.blocking} blocking path(s)`);
+    throw new Error(
+      `DISCOVERY_INCOMPLETE: apply refused with ${plan.pipeline.coverage.discovery.blocking} blocking path(s)`,
+    );
   }
   if (plan.metadataIndexBase?.unmergeableReason) {
     // A scoped apply never discards index records it cannot read (ADR-058).
-    throw new Error(`METADATA_INDEX_UNMERGEABLE: apply refused before any write: ${plan.metadataIndexBase.unmergeableReason}`);
+    throw new Error(
+      `METADATA_INDEX_UNMERGEABLE: apply refused before any write: ${plan.metadataIndexBase.unmergeableReason}`,
+    );
   }
   const unsatisfied = unsatisfiedAuthorizationDrift(plan);
   if (unsatisfied.length > 0) {
@@ -241,11 +285,13 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   if (transaction.cleanupPending) {
     // Bytes are committed; only post-commit cleanup is left for the next run's recovery.
     warnings.push(
-      `metadata transaction ${transaction.transactionId ?? "unknown"} committed but cleanup is pending `
-      + `(${transaction.cleanupPending.journalPath}); the next apply finalizes it`,
+      `metadata transaction ${transaction.transactionId ?? "unknown"} committed but cleanup is pending ` +
+        `(${transaction.cleanupPending.journalPath}); the next apply finalizes it`,
     );
   }
-  const inlineChanged = transaction.changedPaths.filter((item) => item !== METADATA_INDEX_RELATIVE_PATH);
+  const inlineChanged = transaction.changedPaths.filter(
+    (item) => item !== METADATA_INDEX_RELATIVE_PATH,
+  );
   const metadataIndexChanged = transaction.changedPaths.includes(METADATA_INDEX_RELATIVE_PATH);
   const repositoryMutated = transaction.changedPaths.length > 0;
   const apply: ApplyResult = {

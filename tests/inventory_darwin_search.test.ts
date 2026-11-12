@@ -95,7 +95,9 @@ describe("WU-079 RC-057 Finder tags are decoded exactly once", () => {
     const second = xattrs.get(abs)?.get(USER_TAGS) ?? Buffer.alloc(0);
     expect(second.equals(first)).toBe(true);
     expect(first.toString("utf8")).not.toContain("&amp;amp;");
-    expect(harvestDarwinSearch(abs).tags).toEqual(expect.arrayContaining(["R&D", "<x>", "l9", "archive", "zip"]));
+    expect(harvestDarwinSearch(abs).tags).toEqual(
+      expect.arrayContaining(["R&D", "<x>", "l9", "archive", "zip"]),
+    );
   });
 
   test("REG-WU-079-RC-057-RC057-b: a human Finder comment with entities is preserved across projections", () => {

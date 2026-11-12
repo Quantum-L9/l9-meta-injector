@@ -27,9 +27,10 @@
 // operator supplies, and the one implementation here is a fixture that returns
 // vectors it was handed — enough to qualify the contract deterministically,
 // and deliberately not enough to be mistaken for a model.
+
+import { normalizeForAnalysis } from "./corpus_analysis";
 import { compareCodePoints } from "./ordering";
 import { stableId } from "./repository_model";
-import { normalizeForAnalysis } from "./corpus_analysis";
 
 export const EMBEDDING_CHUNK_PROFILE_ID = "semantic-chunking/v1";
 export const EMBEDDING_CHUNK_PROFILE_VERSION = "1.0.0";
@@ -111,16 +112,12 @@ export function embeddingModelIdentityHash(identity: EmbeddingModelIdentity): st
  * not claim it does. What is guaranteed either way is replay *from the cache*,
  * which is why the cache is content-addressed.
  */
-export type EmbeddingReproducibilityClass =
-  | "reproducible_when_runtime_pinned"
-  | "provider_bound";
+export type EmbeddingReproducibilityClass = "reproducible_when_runtime_pinned" | "provider_bound";
 
 export function reproducibilityClassOf(
   configuration: EmbeddingModelConfiguration,
 ): EmbeddingReproducibilityClass {
-  return configuration.locality === "local"
-    ? "reproducible_when_runtime_pinned"
-    : "provider_bound";
+  return configuration.locality === "local" ? "reproducible_when_runtime_pinned" : "provider_bound";
 }
 
 // ───────────────────────────── egress guard ─────────────────────────────
@@ -145,8 +142,8 @@ export function assertEmbeddingConfiguration(options: EmbeddingEnableOptions): v
   const configuration = options.configuration;
   if (configuration === undefined) {
     throw new EmbeddingConfigurationError(
-      "embeddings are enabled but no provider is configured: pass --embedding-provider and "
-      + "--embedding-model, or drop --embeddings",
+      "embeddings are enabled but no provider is configured: pass --embedding-provider and " +
+        "--embedding-model, or drop --embeddings",
     );
   }
   if (configuration.provider.trim().length === 0 || configuration.model_id.trim().length === 0) {
@@ -155,23 +152,23 @@ export function assertEmbeddingConfiguration(options: EmbeddingEnableOptions): v
       configuration.model_id.trim().length === 0 ? "--embedding-model" : null,
     ].filter((flag): flag is string => flag !== null);
     throw new EmbeddingConfigurationError(
-      `embeddings are enabled but ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} `
-      + "empty: a provider and a model must both be named explicitly, because the identity of what "
-      + "produced a vector is part of what makes the vector meaningful",
+      `embeddings are enabled but ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} ` +
+        "empty: a provider and a model must both be named explicitly, because the identity of what " +
+        "produced a vector is part of what makes the vector meaningful",
     );
   }
   if (configuration.locality === "remote") {
     if (!options.allowRemoteEmbeddings) {
       throw new EmbeddingConfigurationError(
-        `provider '${configuration.provider}' is remote, which sends bounded document text off this `
-        + "machine. That needs --allow-remote-embeddings, which enabling embeddings alone does not imply",
+        `provider '${configuration.provider}' is remote, which sends bounded document text off this ` +
+          "machine. That needs --allow-remote-embeddings, which enabling embeddings alone does not imply",
       );
     }
     const endpoint = configuration.endpoint ?? "";
     if (!endpoint.startsWith("https://")) {
       throw new EmbeddingConfigurationError(
-        `remote provider '${configuration.provider}' must use an https:// endpoint; got `
-        + `'${endpoint.length === 0 ? "(none)" : endpoint}'`,
+        `remote provider '${configuration.provider}' must use an https:// endpoint; got ` +
+          `'${endpoint.length === 0 ? "(none)" : endpoint}'`,
       );
     }
   }
@@ -212,7 +209,11 @@ export function chunkDocument(input: {
 
   const chunks: DocumentChunk[] = [];
   const stride = EMBEDDING_CHUNK_CHARACTERS - EMBEDDING_CHUNK_OVERLAP_CHARACTERS;
-  for (let offset = 0, index = 0; offset < text.length && index < MAX_CHUNKS_PER_DOCUMENT; offset += stride, index += 1) {
+  for (
+    let offset = 0, index = 0;
+    offset < text.length && index < MAX_CHUNKS_PER_DOCUMENT;
+    offset += stride, index += 1
+  ) {
     const slice = text.slice(offset, offset + EMBEDDING_CHUNK_CHARACTERS);
     if (slice.trim().length === 0) break;
     chunks.push({
@@ -445,8 +446,8 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
       runDimension = vector.length;
     } else if (vector.length !== runDimension) {
       throw new EmbeddingVectorError(
-        `${origin} vector for '${artifactId}' has dimension ${vector.length}; `
-        + `the run's dimension is ${runDimension}`,
+        `${origin} vector for '${artifactId}' has dimension ${vector.length}; ` +
+          `the run's dimension is ${runDimension}`,
       );
     }
   };
@@ -500,8 +501,8 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
         observedRevisions.add(result.observed_model_revision);
         if (observedRevisions.size > 1) {
           throw new EmbeddingVectorError(
-            `the provider reported more than one model revision in one pass: `
-            + `${[...observedRevisions].sort(compareCodePoints).join(", ")}`,
+            `the provider reported more than one model revision in one pass: ` +
+              `${[...observedRevisions].sort(compareCodePoints).join(", ")}`,
           );
         }
       }
@@ -552,9 +553,8 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
   // so the reported dimension is a property of the corpus and not of the
   // scheduling. Every other number here is a sum or a count and is already
   // order-free; this was the one field a wider pool could have changed.
-  const dimension: number | null = ids.length === 0
-    ? null
-    : (vectors.get(ids[0] as string) as number[]).length;
+  const dimension: number | null =
+    ids.length === 0 ? null : (vectors.get(ids[0] as string) as number[]).length;
   const pairs: EmbeddingPairCandidate[] = [];
   for (let i = 0; i < ids.length; i += 1) {
     for (let j = i + 1; j < ids.length; j += 1) {
@@ -566,8 +566,9 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
   }
 
   pairs.sort(
-    (x, y) => compareCodePoints(x.artifact_a_id, y.artifact_a_id)
-      || compareCodePoints(x.artifact_b_id, y.artifact_b_id),
+    (x, y) =>
+      compareCodePoints(x.artifact_a_id, y.artifact_a_id) ||
+      compareCodePoints(x.artifact_b_id, y.artifact_b_id),
   );
   return {
     pairs,
@@ -576,9 +577,8 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
       provider: configuration.provider,
       model_id: configuration.model_id,
       model_revision: configuration.model_revision ?? null,
-      reported_model_revision: observedRevisions.size === 1
-        ? ([...observedRevisions][0] as string)
-        : null,
+      reported_model_revision:
+        observedRevisions.size === 1 ? ([...observedRevisions][0] as string) : null,
       dimension,
       chunk_profile: chunkProfile,
       reproducibility_class: reproducibilityClassOf(configuration),

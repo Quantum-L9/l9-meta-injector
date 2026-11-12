@@ -13,9 +13,20 @@ function tmp(): string {
 
 function cfg(root: string, outDir: string, indexDir = outDir): PipelineConfig {
   return {
-    root, glob: "**/*", dryRun: false, outDir, indexDir, namespace: "t", authority: "t",
-    nearDupThreshold: 0.9, hashPrefixLength: 16, verbose: false, llmEnabled: false,
-    normalizeFilenames: false, writeInjectLog: false, localFiles: false,
+    root,
+    glob: "**/*",
+    dryRun: false,
+    outDir,
+    indexDir,
+    namespace: "t",
+    authority: "t",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
+    writeInjectLog: false,
+    localFiles: false,
   };
 }
 
@@ -36,7 +47,8 @@ describe("pipeline — generated output placement", () => {
   test("a separate index directory inside the root is omitted as well", async () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
-    const out = path.join(root, "reports"), index = path.join(root, "index");
+    const out = path.join(root, "reports"),
+      index = path.join(root, "index");
     await runPipelineAsync(cfg(root, out, index));
     const second = await runPipelineAsync(cfg(root, out, index));
     expect(second.scanned.map((e) => path.relative(root, e.sourcePath))).toEqual(["a.md"]);
@@ -64,7 +76,9 @@ describe("pipeline — local-files refuses before it materializes", () => {
     writeRawZip(path.join(root, "Bundle.zip"), [{ name: "docs/x.md", content: "# X\n" }]);
     fs.symlinkSync("a.md", path.join(root, "link.md"));
     const before = fs.readdirSync(root).sort();
-    await expect(runPipelineAsync({ ...cfg(root, `${root}.out`), localFiles: true })).rejects.toThrow(/DISCOVERY_INCOMPLETE/);
+    await expect(
+      runPipelineAsync({ ...cfg(root, `${root}.out`), localFiles: true }),
+    ).rejects.toThrow(/DISCOVERY_INCOMPLETE/);
     expect(fs.readdirSync(root).sort()).toEqual(before);
     expect(fs.existsSync(path.join(root, "Bundle.l9extracted"))).toBe(false);
     expect(fs.existsSync(path.join(root, "Bundle.zip.l9meta.yaml"))).toBe(false);
@@ -76,8 +90,14 @@ describe("pipeline — local-files refuses before it materializes", () => {
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
     writeRawZip(path.join(root, "Bundle.zip"), [{ name: "docs/x.md", content: "# X\n" }]);
     fs.symlinkSync("a.md", path.join(root, "link.md"));
-    const result = await runPipelineAsync({ ...cfg(root, `${root}.out`), localFiles: true, dryRun: true });
-    expect(result.archives.map((a) => a.heldReason)).toEqual([expect.stringMatching(/^dry-run: 1 member/)]);
+    const result = await runPipelineAsync({
+      ...cfg(root, `${root}.out`),
+      localFiles: true,
+      dryRun: true,
+    });
+    expect(result.archives.map((a) => a.heldReason)).toEqual([
+      expect.stringMatching(/^dry-run: 1 member/),
+    ]);
     expect(fs.existsSync(path.join(root, "Bundle.l9extracted"))).toBe(false);
   });
 });

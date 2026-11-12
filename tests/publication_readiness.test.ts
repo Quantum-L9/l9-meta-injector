@@ -17,9 +17,11 @@ describe("publication decision", () => {
     expect(doc.publication_command).toBe("npm publish");
     expect(Array.isArray(doc.evidence)).toBe(true);
     expect(doc.evidence.length).toBeGreaterThan(0);
-    const resolved = doc.evidence.every((item: { status: string; result: string }) =>
-      ["verified", "not_applicable_with_reason"].includes(item.status) &&
-      typeof item.result === "string" && item.result.trim().length > 0,
+    const resolved = doc.evidence.every(
+      (item: { status: string; result: string }) =>
+        ["verified", "not_applicable_with_reason"].includes(item.status) &&
+        typeof item.result === "string" &&
+        item.result.trim().length > 0,
     );
     if (doc.status === "approved") {
       expect(resolved).toBe(true);
@@ -44,7 +46,9 @@ type Evidence = { id: string; status: string; result: string } | null;
 type Decision = Record<string, unknown> & { evidence: Evidence[] };
 
 function committedDecision(): Decision {
-  return JSON.parse(fs.readFileSync(path.join(REPO, "docs/package-publication-decision.json"), "utf8"));
+  return JSON.parse(
+    fs.readFileSync(path.join(REPO, "docs/package-publication-decision.json"), "utf8"),
+  );
 }
 
 const mirrors: string[] = [];
@@ -57,11 +61,22 @@ function mirror(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-publication-"));
   mirrors.push(dir);
   for (const relative of [
-    "package.json", "package-lock.json", "README.md", "CHANGELOG.md", "INVARIANTS.md",
-    "docs/package-publication-decision.json", "docs/public-api-contract.json", "docs/package-contract.json",
-    "docs/architecture.md", "docs/decision_log.md", "docs/decisions/029-v4-release-and-consumer-migration.md",
-    "docs/decisions/050-release-version-authority-and-major-tags.md", "docs/release",
-    "scripts/check-publication-readiness.js", "scripts/prepare-release.js", "scripts/lib/release-identity.js",
+    "package.json",
+    "package-lock.json",
+    "README.md",
+    "CHANGELOG.md",
+    "INVARIANTS.md",
+    "docs/package-publication-decision.json",
+    "docs/public-api-contract.json",
+    "docs/package-contract.json",
+    "docs/architecture.md",
+    "docs/decision_log.md",
+    "docs/decisions/029-v4-release-and-consumer-migration.md",
+    "docs/decisions/050-release-version-authority-and-major-tags.md",
+    "docs/release",
+    "scripts/check-publication-readiness.js",
+    "scripts/prepare-release.js",
+    "scripts/lib/release-identity.js",
   ]) {
     fs.cpSync(path.join(REPO, relative), path.join(dir, relative), { recursive: true });
   }
@@ -69,11 +84,16 @@ function mirror(): string {
 }
 
 function writeDecision(dir: string, doc: Decision): void {
-  fs.writeFileSync(path.join(dir, "docs/package-publication-decision.json"), `${JSON.stringify(doc, null, 2)}\n`);
+  fs.writeFileSync(
+    path.join(dir, "docs/package-publication-decision.json"),
+    `${JSON.stringify(doc, null, 2)}\n`,
+  );
 }
 
 function readDecision(dir: string): Decision {
-  return JSON.parse(fs.readFileSync(path.join(dir, "docs/package-publication-decision.json"), "utf8"));
+  return JSON.parse(
+    fs.readFileSync(path.join(dir, "docs/package-publication-decision.json"), "utf8"),
+  );
 }
 
 function packageVersion(dir: string): string {
@@ -93,14 +113,23 @@ function nextMinor(version: string): string {
 }
 
 function gate(dir: string): { status: number | null; output: string } {
-  const result = spawnSync(process.execPath, [path.join(dir, "scripts/check-publication-readiness.js")], { encoding: "utf8" });
+  const result = spawnSync(
+    process.execPath,
+    [path.join(dir, "scripts/check-publication-readiness.js")],
+    { encoding: "utf8" },
+  );
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 function prepare(dir: string, version: string): { status: number | null; output: string } {
-  const result = spawnSync(process.execPath, [path.join(dir, "scripts/prepare-release.js"), "--branch", `release/v${version}`], {
-    encoding: "utf8", env: { ...process.env, GITHUB_REF_NAME: "" },
-  });
+  const result = spawnSync(
+    process.execPath,
+    [path.join(dir, "scripts/prepare-release.js"), "--branch", `release/v${version}`],
+    {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_REF_NAME: "" },
+    },
+  );
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
@@ -113,21 +142,34 @@ function completeDecision(dir: string): Decision {
     status: "approved",
     package_version: version,
     approved_version: version,
-    evidence: doc.evidence.map((item) => (item && item.id === "distribution_owner_approval"
-      ? { ...item, status: "verified", result: `Distribution owner approved npm publication of ${version} (test mirror).` }
-      : item)),
+    evidence: doc.evidence.map((item) =>
+      item && item.id === "distribution_owner_approval"
+        ? {
+            ...item,
+            status: "verified",
+            result: `Distribution owner approved npm publication of ${version} (test mirror).`,
+          }
+        : item,
+    ),
   };
 }
 
 describe("publication gate requires the evidence set (RC-108)", () => {
   test("REG-WU-068-RC-108-a: one arbitrary verified item does not approve publication", () => {
     const dir = mirror();
-    writeDecision(dir, { ...completeDecision(dir), evidence: [{ id: "anything", status: "verified", result: "x" }] });
+    writeDecision(dir, {
+      ...completeDecision(dir),
+      evidence: [{ id: "anything", status: "verified", result: "x" }],
+    });
     const result = gate(dir);
     expect(result.status).toBe(1);
     expect(result.output).toMatch(/BLOCKED/);
     expect(result.output).toMatch(/unknown evidence id 'anything'/);
-    for (const id of ["npm_registry_history", "constellation_consumer_inventory", "distribution_owner_approval"]) {
+    for (const id of [
+      "npm_registry_history",
+      "constellation_consumer_inventory",
+      "distribution_owner_approval",
+    ]) {
       expect(result.output).toContain(`required evidence '${id}' is missing`);
     }
   });
@@ -143,7 +185,10 @@ describe("publication gate requires the evidence set (RC-108)", () => {
   test("REG-WU-068-RC-108-c: an approval without distribution_owner_approval is blocked", () => {
     const dir = mirror();
     const doc = completeDecision(dir);
-    writeDecision(dir, { ...doc, evidence: doc.evidence.filter((item) => item?.id !== "distribution_owner_approval") });
+    writeDecision(dir, {
+      ...doc,
+      evidence: doc.evidence.filter((item) => item?.id !== "distribution_owner_approval"),
+    });
     const result = gate(dir);
     expect(result.status).toBe(1);
     expect(result.output).toContain("required evidence 'distribution_owner_approval' is missing");
@@ -152,7 +197,13 @@ describe("publication gate requires the evidence set (RC-108)", () => {
   test("REG-WU-068-RC-108-d: a duplicated evidence id is blocked", () => {
     const dir = mirror();
     const doc = completeDecision(dir);
-    writeDecision(dir, { ...doc, evidence: [...doc.evidence, doc.evidence.find((item) => item?.id === "npm_registry_history") ?? null] });
+    writeDecision(dir, {
+      ...doc,
+      evidence: [
+        ...doc.evidence,
+        doc.evidence.find((item) => item?.id === "npm_registry_history") ?? null,
+      ],
+    });
     const result = gate(dir);
     expect(result.status).toBe(1);
     expect(result.output).toContain("evidence id 'npm_registry_history' appears more than once");
@@ -211,7 +262,9 @@ describe("release preparation never carries an approval to another version (RC-1
     expect(prepare(dir, next).status).toBe(0);
     const once = fs.readFileSync(path.join(dir, "docs/package-publication-decision.json"), "utf8");
     expect(prepare(dir, next).status).toBe(0);
-    expect(fs.readFileSync(path.join(dir, "docs/package-publication-decision.json"), "utf8")).toBe(once);
+    expect(fs.readFileSync(path.join(dir, "docs/package-publication-decision.json"), "utf8")).toBe(
+      once,
+    );
   });
 
   test("REG-WU-068-RC-108-i: a blocked decision stays blocked through preparation", () => {
@@ -227,7 +280,8 @@ describe("release preparation never carries an approval to another version (RC-1
   test("REG-AUDIT-N01-a: preparation keeps every ADR-050 'Amended by' line and is idempotent", () => {
     const dir = mirror();
     const adr = path.join(dir, "docs/decisions/050-release-version-authority-and-major-tags.md");
-    const amendments = (text: string): string[] => text.split("\n").filter((line) => line.startsWith("Amended by [ADR-"));
+    const amendments = (text: string): string[] =>
+      text.split("\n").filter((line) => line.startsWith("Amended by [ADR-"));
     const committed = amendments(fs.readFileSync(adr, "utf8"));
     expect(committed.length).toBeGreaterThan(0);
     const next = nextMinor(packageVersion(dir));
@@ -249,7 +303,11 @@ describe("release preparation never carries an approval to another version (RC-1
     expect(doc.approved_version).toBe(null);
     const owner = doc.evidence.find((item) => item?.id === "distribution_owner_approval");
     expect(owner?.status).not.toBe("verified");
-    const result = spawnSync(process.execPath, [path.join(REPO, "scripts/check-publication-readiness.js")], { encoding: "utf8" });
+    const result = spawnSync(
+      process.execPath,
+      [path.join(REPO, "scripts/check-publication-readiness.js")],
+      { encoding: "utf8" },
+    );
     expect(result.status).toBe(1);
   });
 });

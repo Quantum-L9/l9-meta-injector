@@ -1,34 +1,71 @@
 import * as path from "node:path";
-import { ClassifyResult, ArtifactType, ArtifactFamily, HeaderConvention, ArtifactClassification } from "./schema";
-import { PROSE_EXTS } from "./comment";
 import { classifyArtifact } from "./artifact_class";
+import { PROSE_EXTS } from "./comment";
+import {
+  ArtifactClassification,
+  ArtifactFamily,
+  ArtifactType,
+  ClassifyResult,
+  HeaderConvention,
+} from "./schema";
 
 const FAMILY_SIGNALS: Array<{ family: ArtifactFamily; keywords: string[] }> = [
-  { family: "auditor",            keywords: ["audit", "review", "check", "validate", "lint", "scan"] },
-  { family: "compiler",           keywords: ["compile", "build", "generate", "render", "produce"] },
-  { family: "meta_kernel_forge",  keywords: ["meta", "kernel", "forge", "bootstrap", "scaffold"] },
-  { family: "builder",            keywords: ["build", "construct", "create", "assemble", "install"] },
-  { family: "planner",            keywords: ["plan", "schedule", "orchestrate", "coordinate", "roadmap"] },
-  { family: "research",           keywords: ["research", "search", "find", "retrieve", "explore", "analyze"] },
-  { family: "domain_agent",       keywords: ["agent", "domain", "dispatch", "route", "delegate"] },
-  { family: "legal",              keywords: ["legal", "contract", "clause", "law", "compliance"] },
+  { family: "auditor", keywords: ["audit", "review", "check", "validate", "lint", "scan"] },
+  { family: "compiler", keywords: ["compile", "build", "generate", "render", "produce"] },
+  { family: "meta_kernel_forge", keywords: ["meta", "kernel", "forge", "bootstrap", "scaffold"] },
+  { family: "builder", keywords: ["build", "construct", "create", "assemble", "install"] },
+  { family: "planner", keywords: ["plan", "schedule", "orchestrate", "coordinate", "roadmap"] },
+  {
+    family: "research",
+    keywords: ["research", "search", "find", "retrieve", "explore", "analyze"],
+  },
+  { family: "domain_agent", keywords: ["agent", "domain", "dispatch", "route", "delegate"] },
+  { family: "legal", keywords: ["legal", "contract", "clause", "law", "compliance"] },
 ];
 
 const TYPE_SIGNALS: Array<{ type: ArtifactType; keywords: string[]; pathPatterns: string[] }> = [
-  { type: "playbook",  keywords: ["playbook", "workflow", "process", "procedure", "protocol"], pathPatterns: ["playbooks", "playbook"] },
-  { type: "kernel",    keywords: ["kernel", "runtime", "executor", "sandbox", "engine"],       pathPatterns: ["kernels", "kernel"] },
-  { type: "context",   keywords: ["context", "knowledge", "documentation", "reference"],       pathPatterns: ["contexts", "context"] },
+  {
+    type: "playbook",
+    keywords: ["playbook", "workflow", "process", "procedure", "protocol"],
+    pathPatterns: ["playbooks", "playbook"],
+  },
+  {
+    type: "kernel",
+    keywords: ["kernel", "runtime", "executor", "sandbox", "engine"],
+    pathPatterns: ["kernels", "kernel"],
+  },
+  {
+    type: "context",
+    keywords: ["context", "knowledge", "documentation", "reference"],
+    pathPatterns: ["contexts", "context"],
+  },
   // "decisions"/"adr" covers the standard Architecture Decision Record convention
   // (docs/decisions/NNN-title.md) — a governance artifact by structure, independent of
   // prose content. Without the path signal, ADRs fall through to keyword-bag scoring,
   // which is fragile: ADRs share the same template (Status/Date/Context/Decision/
   // Consequences), so a single incidental word (e.g. "test", "engine") can tip an ADR
   // into an unrelated, inconsistent type across a semantically-identical document set.
-  { type: "doctrine",  keywords: ["doctrine", "governance", "policy", "principle", "standard"],pathPatterns: ["doctrines", "doctrine", "decisions", "decision", "adr"] },
-  { type: "test",      keywords: ["test", "spec", "fixture", "mock"],                          pathPatterns: ["tests", "test", "__tests__"] },
-  { type: "script",    keywords: ["script", "utility", "helper", "tool"],                      pathPatterns: ["scripts", "script"] },
-  { type: "prompt",    keywords: [],                                                             pathPatterns: ["prompts", "prompt"] },
-  { type: "skill",     keywords: ["skill", "capability", "function", "action", "operation"],   pathPatterns: ["skills", "skill"] },
+  {
+    type: "doctrine",
+    keywords: ["doctrine", "governance", "policy", "principle", "standard"],
+    pathPatterns: ["doctrines", "doctrine", "decisions", "decision", "adr"],
+  },
+  {
+    type: "test",
+    keywords: ["test", "spec", "fixture", "mock"],
+    pathPatterns: ["tests", "test", "__tests__"],
+  },
+  {
+    type: "script",
+    keywords: ["script", "utility", "helper", "tool"],
+    pathPatterns: ["scripts", "script"],
+  },
+  { type: "prompt", keywords: [], pathPatterns: ["prompts", "prompt"] },
+  {
+    type: "skill",
+    keywords: ["skill", "capability", "function", "action", "operation"],
+    pathPatterns: ["skills", "skill"],
+  },
 ];
 
 /** Types that block pipeline injection — keyword-only assignment needs a high bar (ADR-018). */
@@ -60,7 +97,11 @@ function scoreType(text: string, keywords: string[]): { score: number; hits: str
  * companion keyword hit or score ≥ 3 (avoids medium false positives like
  * filename "tool" + incidental "script").
  */
-function acceptKeywordNonInjectable(type: "test" | "script", score: number, hits: string[]): boolean {
+function acceptKeywordNonInjectable(
+  type: "test" | "script",
+  score: number,
+  hits: string[],
+): boolean {
   if (score < 2) return false;
   if (score >= 3) return true;
   const strong = STRONG_NON_INJECTABLE_KEYWORDS[type];
@@ -94,11 +135,22 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   const dotMatch = /\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./.exec(fn);
   if (dotMatch) {
     const t = dotMatch[1] as ArtifactType;
-    return { artifactType: t, family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
+    return {
+      artifactType: t,
+      family: detectFamily(text),
+      signals: extractSignals(text),
+      confidence: "high",
+    };
   }
 
   // Prompt-*.md
-  if (fn.startsWith("prompt-")) return { artifactType: "prompt", family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
+  if (fn.startsWith("prompt-"))
+    return {
+      artifactType: "prompt",
+      family: detectFamily(text),
+      signals: extractSignals(text),
+      confidence: "high",
+    };
 
   // Non-prose files stay source unless the semantic class plus a path or shell-extension
   // guard says test or script. Keyword and prose path heuristics do not apply.
@@ -113,7 +165,12 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
     let artifactType: ArtifactType = "source";
     if (kind === "test_suite" || (kind === "fixture" && fixtureSegment)) artifactType = "test";
     else if (kind === "script" && (shell || scriptSegment)) artifactType = "script";
-    return { artifactType, family: detectFamily(text), signals: extractSignals(text), confidence: "low" };
+    return {
+      artifactType,
+      family: detectFamily(text),
+      signals: extractSignals(text),
+      confidence: "low",
+    };
   }
 
   // --- markdown/txt only, below ---
@@ -121,7 +178,12 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   // Path segment. The leading slash matches a top-level folder (`skills/a.md`).
   for (const ts of TYPE_SIGNALS) {
     if (ts.pathPatterns.some((p) => bounded.includes(`/${p}/`))) {
-      return { artifactType: ts.type, family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
+      return {
+        artifactType: ts.type,
+        family: detectFamily(text),
+        signals: extractSignals(text),
+        confidence: "high",
+      };
     }
   }
 
@@ -131,7 +193,10 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
 
   if ((best === "test" || best === "script") && !acceptKeywordNonInjectable(best, score, hits)) {
     // Demote weak/ambiguous non-injectable wins to the best injectable type, or context.
-    const next = scoreBest(text, TYPE_SIGNALS.filter((ts) => !NON_INJECTABLE_TYPES.has(ts.type)));
+    const next = scoreBest(
+      text,
+      TYPE_SIGNALS.filter((ts) => !NON_INJECTABLE_TYPES.has(ts.type)),
+    );
     best = next.bestScore > 0 ? next.best : "context";
     score = Math.max(next.bestScore, 0);
   }
@@ -140,10 +205,16 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
 
   // Keyword-only promotion to an executable prose type is capped. Dot-convention,
   // prompt-, and path tiers already returned above.
-  if (best === "skill" || best === "playbook" || best === "kernel" || best === "doctrine") best = "context";
+  if (best === "skill" || best === "playbook" || best === "kernel" || best === "doctrine")
+    best = "context";
 
   const conf = score >= 2 ? "medium" : "low";
-  return { artifactType: best, family: detectFamily(text), signals: extractSignals(text), confidence: conf };
+  return {
+    artifactType: best,
+    family: detectFamily(text),
+    signals: extractSignals(text),
+    confidence: conf,
+  };
 }
 
 /** A ClassifyResult augmented with the 17-class semantic classification. */
@@ -159,7 +230,7 @@ export interface ClassifyResultWithClass extends ClassifyResult {
 export function classifyWithSemantics(
   filePath: string,
   body: string,
-  hc: HeaderConvention
+  hc: HeaderConvention,
 ): ClassifyResultWithClass {
   return { ...classify(filePath, body, hc), semantic: classifyArtifact(filePath, body) };
 }

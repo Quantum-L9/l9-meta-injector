@@ -9,19 +9,19 @@
 // by shelling out to a converter would turn a read-only observer into a process
 // launcher, and the guess it produced would carry no provenance worth having.
 import { DecoderRegistry } from "./decoder";
-import { csvDecoder, textDecoder } from "./text";
-import { docxDecoder, pptxDecoder, xlsxDecoder } from "./office";
 import { htmlDecoder } from "./html";
 import { notebookDecoder } from "./notebook";
+import { docxDecoder, pptxDecoder, xlsxDecoder } from "./office";
 import { pdfDecoder } from "./pdf";
+import { csvDecoder, textDecoder } from "./text";
 
 export * from "./decoder";
-export { readUtf8, splitCsvLine, textDecoder, csvDecoder } from "./text";
-export { docxDecoder, pptxDecoder, xlsxDecoder } from "./office";
 export { htmlDecoder, tokenizeHtml } from "./html";
 export { notebookDecoder } from "./notebook";
+export { docxDecoder, pptxDecoder, xlsxDecoder } from "./office";
+export { isSafePartName, OoxmlError, openOoxml } from "./ooxml";
 export { pdfDecoder, pdfInternals } from "./pdf";
-export { isSafePartName, openOoxml, OoxmlError } from "./ooxml";
+export { csvDecoder, readUtf8, splitCsvLine, textDecoder } from "./text";
 export { decodeXmlText, localName, parseXml, XmlError } from "./xml";
 
 /**
@@ -39,14 +39,32 @@ export { decodeXmlText, localName, parseXml, XmlError } from "./xml";
  * in `corpus_coverage` asserts exactly that.
  */
 export const UNSUPPORTED_LEGACY_EXTENSIONS: readonly string[] = [
-  ".doc", ".epub", ".key", ".numbers", ".odp", ".ods", ".odt",
-  ".pages", ".ppt", ".rtf", ".wpd", ".xls",
+  ".doc",
+  ".epub",
+  ".key",
+  ".numbers",
+  ".odp",
+  ".ods",
+  ".odt",
+  ".pages",
+  ".ppt",
+  ".rtf",
+  ".wpd",
+  ".xls",
 ];
 
 /** Formats that hold no text layer at all and need OCR to say anything. */
 export const OCR_CANDIDATE_EXTENSIONS: readonly string[] = [
-  ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg",
-  ".png", ".tif", ".tiff", ".webp",
+  ".bmp",
+  ".gif",
+  ".heic",
+  ".heif",
+  ".jpeg",
+  ".jpg",
+  ".png",
+  ".tif",
+  ".tiff",
+  ".webp",
 ];
 
 /**
@@ -69,7 +87,13 @@ export const OCR_CANDIDATE_EXTENSIONS: readonly string[] = [
  * looks wired and is not.
  */
 export const PROSE_DOCUMENT_FORMATS: readonly string[] = [
-  "csv", "docx", "html", "ipynb", "pdf", "pptx", "xlsx",
+  "csv",
+  "docx",
+  "html",
+  "ipynb",
+  "pdf",
+  "pptx",
+  "xlsx",
 ];
 
 /** Whether a decoded document of this format enters lexical analysis. */

@@ -1,8 +1,8 @@
+import type { EmbeddingRunReport } from "./corpus_embeddings";
 import type { ConsolidationCandidate, FusionOptions, PairClassification, ProjectCandidate, TopicCandidate } from "./corpus_fusion";
 import type { EmbeddingPairScore, PairGenerationDiagnostic, SemanticPair } from "./corpus_pairs";
-import type { ArtifactFeatureView, SemanticArtifactInput } from "./corpus_semantics";
 import type { PackAssertion, ReasoningCandidate, ReasoningEvidencePack, ReasoningPackBudget } from "./corpus_reasoning";
-import type { EmbeddingRunReport } from "./corpus_embeddings";
+import type { ArtifactFeatureView, SemanticArtifactInput } from "./corpus_semantics";
 export declare const SEMANTIC_ANALYSIS_PROFILE_ID = "corpus-semantic-analysis/v1";
 export declare const SEMANTIC_ANALYSIS_PROFILE_VERSION = "1.0.0";
 /** Every profile that decides what this pass emits, recorded in one place. */

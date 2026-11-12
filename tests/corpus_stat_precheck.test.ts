@@ -10,8 +10,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { type CorpusScanResult, runCorpusScan } from "../src/corpus_scan";
 import { acquireLocalSource } from "../src/local_source";
-import { runCorpusScan, type CorpusScanResult } from "../src/corpus_scan";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const roots: string[] = [];
@@ -48,7 +48,10 @@ function twoRoots(): { a: string; b: string; doc: string } {
 
 function options(a: string, b: string) {
   return {
-    roots: [{ path: a, name: "root-a" }, { path: b, name: "root-b" }],
+    roots: [
+      { path: a, name: "root-a" },
+      { path: b, name: "root-b" },
+    ],
     producerVersion: "test",
     topics: { enabled: false },
     nearDuplicates: { enabled: false },
@@ -56,7 +59,11 @@ function options(a: string, b: string) {
 }
 
 /** Run a scan, rewriting `doc` while the scan yields between roots A and B. */
-async function scanWithRewriteBetweenRoots(a: string, b: string, rewrite: () => void): Promise<CorpusScanResult> {
+async function scanWithRewriteBetweenRoots(
+  a: string,
+  b: string,
+  rewrite: () => void,
+): Promise<CorpusScanResult> {
   const pending = runCorpusScan(options(a, b));
   // Root A was acquired synchronously; the scan is now yielding before root B.
   rewrite();
@@ -78,7 +85,11 @@ describe("stat_precheck is the hashing stat (RC-063)", () => {
     expect(recorded.content_hash).toBe(sha(V1));
     expect(recorded.stat_precheck?.size_bytes).toBe(Buffer.byteLength(V1));
 
-    const next = await runCorpusScan({ ...options(a, b), verification: "incremental", previousSnapshot: first.snapshot });
+    const next = await runCorpusScan({
+      ...options(a, b),
+      verification: "incremental",
+      previousSnapshot: first.snapshot,
+    });
     expect(docArtifact(next).content_hash).toBe(sha(v2));
     expect(next.snapshot.verification.fully_rehashed_artifact_count).toBeGreaterThanOrEqual(1);
   });
@@ -94,7 +105,11 @@ describe("stat_precheck is the hashing stat (RC-063)", () => {
     expect(docArtifact(first).content_hash).toBe(sha(V1));
     expect(docArtifact(first).stat_precheck?.mtime_ms).toBe(Date.parse("2026-01-01T00:00:00Z"));
 
-    const next = await runCorpusScan({ ...options(a, b), verification: "incremental", previousSnapshot: first.snapshot });
+    const next = await runCorpusScan({
+      ...options(a, b),
+      verification: "incremental",
+      previousSnapshot: first.snapshot,
+    });
     expect(docArtifact(next).content_hash).toBe(sha(v2));
     expect(next.snapshot.verification.fully_rehashed_artifact_count).toBeGreaterThanOrEqual(1);
   });
@@ -102,7 +117,11 @@ describe("stat_precheck is the hashing stat (RC-063)", () => {
   test("REG-WU-040-RC-063-c: an unchanged file is still reused under --incremental", async () => {
     const { a, b } = twoRoots();
     const first = await runCorpusScan(options(a, b));
-    const next = await runCorpusScan({ ...options(a, b), verification: "incremental", previousSnapshot: first.snapshot });
+    const next = await runCorpusScan({
+      ...options(a, b),
+      verification: "incremental",
+      previousSnapshot: first.snapshot,
+    });
     expect(next.snapshot.verification.cached_hash_reuse_count).toBe(2);
     expect(next.snapshot.verification.fully_rehashed_artifact_count).toBe(0);
     expect(docArtifact(next).content_hash).toBe(sha(V1));
@@ -117,9 +136,17 @@ describe("stat_precheck is the hashing stat (RC-063)", () => {
     fs.writeFileSync(path.join(root, "big.md"), "x".repeat(4096));
     fs.symlinkSync(path.join(root, "a.md"), path.join(root, "link.md"));
     writeRawZip(path.join(root, "Bundle.zip"), [{ name: "m.md", content: "# M\n" }]);
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp(), hashMaxBytes: 1024 });
+    const observation = acquireLocalSource({
+      path: root,
+      scratchParent: tmp(),
+      hashMaxBytes: 1024,
+    });
     try {
-      expect([...observation.hashingStats.keys()].sort()).toEqual(["Bundle.zip", "a.md", "docs/b.md"]);
+      expect([...observation.hashingStats.keys()].sort()).toEqual([
+        "Bundle.zip",
+        "a.md",
+        "docs/b.md",
+      ]);
       const stat = fs.statSync(path.join(root, "a.md"));
       expect(observation.hashingStats.get("a.md")).toMatchObject({
         size_bytes: stat.size,

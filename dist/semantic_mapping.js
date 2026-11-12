@@ -144,8 +144,7 @@ function governedMeaningOf(predicate) {
     const match = /^meta\.([a-z0-9]+)\.(identity|classification|governance|retrieval)\.([a-z_]+)$/.exec(predicate);
     if (!match)
         return undefined;
-    const declared_schema = Object.keys(exports.RECOGNIZED_DECLARED_SCHEMAS)
-        .find((schema) => exports.RECOGNIZED_DECLARED_SCHEMAS[schema] === match[1]);
+    const declared_schema = Object.keys(exports.RECOGNIZED_DECLARED_SCHEMAS).find((schema) => exports.RECOGNIZED_DECLARED_SCHEMAS[schema] === match[1]);
     const mapping = BY_FIELD.get(match[3]);
     if (declared_schema === undefined || mapping?.category !== match[2])
         return undefined;

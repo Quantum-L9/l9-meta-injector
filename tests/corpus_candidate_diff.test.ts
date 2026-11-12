@@ -50,8 +50,16 @@ function write(root: string, relative: string, contents: string): void {
 /** A corpus with an exact duplicate pair, a topic and a declared project. */
 function baseCorpus(): string {
   const root = tmp();
-  write(root, "plan.md", `---\ntitle: Storage Plan\nkind: plan\n---\n\n# Storage Plan\n\n${BODY}\n`);
-  write(root, "copies/plan.md", `---\ntitle: Storage Plan\nkind: plan\n---\n\n# Storage Plan\n\n${BODY}\n`);
+  write(
+    root,
+    "plan.md",
+    `---\ntitle: Storage Plan\nkind: plan\n---\n\n# Storage Plan\n\n${BODY}\n`,
+  );
+  write(
+    root,
+    "copies/plan.md",
+    `---\ntitle: Storage Plan\nkind: plan\n---\n\n# Storage Plan\n\n${BODY}\n`,
+  );
   write(root, "notes.md", `# Acquisition notes\n\n${BODY}\n`);
   write(
     root,
@@ -103,10 +111,12 @@ describe("the analysis manifest a run writes into its snapshot", () => {
 
     // Same disk, same rules: both identities hold, and the manifest is identical
     // rather than merely equivalent.
-    expect(second.snapshot.corpus_source_snapshot_id)
-      .toBe(first.snapshot.corpus_source_snapshot_id);
-    expect(second.snapshot.analysis.corpus_analysis_id)
-      .toBe(first.snapshot.analysis.corpus_analysis_id);
+    expect(second.snapshot.corpus_source_snapshot_id).toBe(
+      first.snapshot.corpus_source_snapshot_id,
+    );
+    expect(second.snapshot.analysis.corpus_analysis_id).toBe(
+      first.snapshot.analysis.corpus_analysis_id,
+    );
     expect(second.snapshot.analysis_manifest).toEqual(first.snapshot.analysis_manifest);
   });
 });
@@ -118,7 +128,11 @@ describe("the candidate delta between two runs", () => {
 
     // A third byte-identical copy joins the existing duplicate cluster, and a
     // second package.json declaring the same name joins the project.
-    write(root, "backup/plan.md", `---\ntitle: Storage Plan\nkind: plan\n---\n\n# Storage Plan\n\n${BODY}\n`);
+    write(
+      root,
+      "backup/plan.md",
+      `---\ntitle: Storage Plan\nkind: plan\n---\n\n# Storage Plan\n\n${BODY}\n`,
+    );
     const after = await scan(root, before);
 
     const analysis = after.diff?.analysis;
@@ -163,7 +177,9 @@ describe("the candidate delta between two runs", () => {
     const analysis = after.diff?.analysis;
     expect(analysis?.not_computed_reason).toBeNull();
     expect(analysis?.candidate_removed).toBeGreaterThan(0);
-    const clusterKind = analysis?.by_kind.find((k) => k.candidate_kind === "exact_duplicate_cluster");
+    const clusterKind = analysis?.by_kind.find(
+      (k) => k.candidate_kind === "exact_duplicate_cluster",
+    );
     expect(clusterKind?.removed).toBe(1);
     expect(after.candidates.exact_duplicate_clusters).toHaveLength(0);
   });
@@ -225,7 +241,9 @@ describe("a comparison that cannot be made", () => {
   it("refuses to compare payload hashes from two manifest definitions", () => {
     const manifest = buildAnalysisManifest({
       exactDuplicateClusters: [{ cluster_id: "c1", content_hash: "h", artifact_ids: ["a", "b"] }],
-      nearDuplicates: [], topics: [], projects: [],
+      nearDuplicates: [],
+      topics: [],
+      projects: [],
     });
     const older = { ...manifest, manifest_version: "0.9.0" };
 
@@ -238,7 +256,10 @@ describe("a comparison that cannot be made", () => {
 
   it("never substitutes zero for a count it did not compute", () => {
     const manifest = buildAnalysisManifest({
-      exactDuplicateClusters: [], nearDuplicates: [], topics: [], projects: [],
+      exactDuplicateClusters: [],
+      nearDuplicates: [],
+      topics: [],
+      projects: [],
     });
     for (const [previous, current] of [
       [undefined, manifest],
@@ -264,7 +285,9 @@ describe("a comparison that cannot be made", () => {
 describe("what counts as a changed candidate", () => {
   const cluster = (ids: string[]) => ({
     exactDuplicateClusters: [{ cluster_id: "c1", content_hash: "h1", artifact_ids: ids }],
-    nearDuplicates: [], topics: [], projects: [],
+    nearDuplicates: [],
+    topics: [],
+    projects: [],
   });
 
   it("ignores the order members were written down in", () => {
@@ -281,10 +304,13 @@ describe("what counts as a changed candidate", () => {
   });
 
   it("compares a score at the precision the report shows it", () => {
-    const near = (score: number) => buildAnalysisManifest({
-      exactDuplicateClusters: [], topics: [], projects: [],
-      nearDuplicates: [{ candidate_id: "n1", artifact_a_id: "a", artifact_b_id: "b", score }],
-    });
+    const near = (score: number) =>
+      buildAnalysisManifest({
+        exactDuplicateClusters: [],
+        topics: [],
+        projects: [],
+        nearDuplicates: [{ candidate_id: "n1", artifact_a_id: "a", artifact_b_id: "b", score }],
+      });
     // Six places is what a rendered candidate carries, so a difference below it
     // is a difference nobody can see and must not be reported as a change.
     expect(diffAnalysisManifests(near(0.871234), near(0.8712344)).candidate_changed).toBe(0);

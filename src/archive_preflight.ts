@@ -175,7 +175,11 @@ function pathHolds(canonical: string, raw: string, policy: LocalArchivePolicy): 
   if (raw.startsWith("\\\\") || normalized.startsWith("//")) {
     holds.push({ code: "archive.path_unc", memberPath: raw, message: "member path is a UNC path" });
   } else if (normalized.startsWith("/")) {
-    holds.push({ code: "archive.path_absolute", memberPath: raw, message: "member path is absolute" });
+    holds.push({
+      code: "archive.path_absolute",
+      memberPath: raw,
+      message: "member path is absolute",
+    });
   }
   if (WINDOWS_DRIVE.test(raw)) {
     holds.push({
@@ -185,10 +189,18 @@ function pathHolds(canonical: string, raw: string, policy: LocalArchivePolicy): 
     });
   }
   if (normalized.split("/").includes("..")) {
-    holds.push({ code: "archive.path_traversal", memberPath: raw, message: "member path contains a '..' component" });
+    holds.push({
+      code: "archive.path_traversal",
+      memberPath: raw,
+      message: "member path contains a '..' component",
+    });
   }
   if (canonical.length === 0) {
-    holds.push({ code: "archive.path_empty", memberPath: raw, message: "member path is empty after normalization" });
+    holds.push({
+      code: "archive.path_empty",
+      memberPath: raw,
+      message: "member path is empty after normalization",
+    });
   }
   if (raw.length > policy.maxPathLength) {
     holds.push({
@@ -196,7 +208,9 @@ function pathHolds(canonical: string, raw: string, policy: LocalArchivePolicy): 
       memberPath: raw.slice(0, 120),
       message: `member path exceeds the ${policy.maxPathLength}-character limit`,
     });
-  } else if (canonical.split("/").some((segment) => Buffer.byteLength(segment, "utf8") > MAX_SEGMENT_BYTES)) {
+  } else if (
+    canonical.split("/").some((segment) => Buffer.byteLength(segment, "utf8") > MAX_SEGMENT_BYTES)
+  ) {
     holds.push({
       code: "archive.path_too_long",
       memberPath: raw.slice(0, 120),
@@ -332,11 +346,13 @@ function collisionHolds(
   const previousExact = accumulator.seenExact.get(canonical);
   if (previousExact !== undefined) {
     accumulator.duplicates.add(key);
-    return [{
-      code: "archive.duplicate_member",
-      memberPath: entry.name,
-      message: `member path is declared more than once (also '${previousExact}')`,
-    }];
+    return [
+      {
+        code: "archive.duplicate_member",
+        memberPath: entry.name,
+        message: `member path is declared more than once (also '${previousExact}')`,
+      },
+    ];
   }
   accumulator.seenExact.set(canonical, entry.name);
   const previousCollision = accumulator.seenCollision.get(key);
@@ -351,7 +367,10 @@ function collisionHolds(
 /** Rules that apply only to a file member: compression support and declared size. */
 function fileMemberHolds(entry: ZipCentralEntry, policy: LocalArchivePolicy): ArchiveHold[] {
   const holds: ArchiveHold[] = [];
-  if (entry.compressionMethod !== COMPRESSION_STORED && entry.compressionMethod !== COMPRESSION_DEFLATE) {
+  if (
+    entry.compressionMethod !== COMPRESSION_STORED &&
+    entry.compressionMethod !== COMPRESSION_DEFLATE
+  ) {
     holds.push({
       code: "archive.compression_unsupported",
       memberPath: entry.name,
@@ -385,7 +404,11 @@ function fileMemberHolds(entry: ZipCentralEntry, policy: LocalArchivePolicy): Ar
  * file and `docs/readme.txt` cannot both be materialized on a case-insensitive
  * filesystem, and the verdict must not depend on which host judges it.
  */
-function notePathUsage(entry: ZipCentralEntry, canonical: string, accumulator: PreflightAccumulator): void {
+function notePathUsage(
+  entry: ZipCentralEntry,
+  canonical: string,
+  accumulator: PreflightAccumulator,
+): void {
   if (canonical.length === 0 || canonical.startsWith("/")) return;
   const segments = canonical.split("/");
   const key = memberCollisionKey(canonical);
@@ -451,7 +474,10 @@ function inspectEntry(
 }
 
 /** Expansion-total and ratio rules, judged once the whole directory is known. */
-function expansionHolds(input: ArchivePreflightInput, declaredUncompressedBytes: number): ArchiveHold[] {
+function expansionHolds(
+  input: ArchivePreflightInput,
+  declaredUncompressedBytes: number,
+): ArchiveHold[] {
   const { policy } = input;
   const holds: ArchiveHold[] = [];
   if (declaredUncompressedBytes > policy.maxTotalUncompressedBytesPerArchive) {

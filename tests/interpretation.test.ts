@@ -2,22 +2,22 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { inventoryTree } from "../src/inventory";
+import { defaultExtractors } from "../src/extractors";
+import { pythonRouteObservationExtractor } from "../src/extractors/prose";
 import {
+  boundExcerpt,
   DEFAULT_MAX_FILE_BYTES,
-  interpretDocumentContent,
+  type Extractor,
   INTERPRETATION_PROFILE_ID,
   INTERPRETATION_PROFILE_VERSION,
-  MAX_EXCERPT_LENGTH,
-  boundExcerpt,
+  type InterpretationResult,
+  interpretDocumentContent,
   interpretRepository,
   isSecretCandidatePath,
   looksSecret,
-  type Extractor,
-  type InterpretationResult,
+  MAX_EXCERPT_LENGTH,
 } from "../src/interpretation";
-import { defaultExtractors } from "../src/extractors";
-import { pythonRouteObservationExtractor } from "../src/extractors/prose";
+import { inventoryTree } from "../src/inventory";
 
 const SUBJECT = "repo:fixture";
 
@@ -65,8 +65,9 @@ describe("interpretation seam", () => {
     const files = { "pyproject.toml": '[tool.poetry]\nname = "svc"\n' };
     const first = interpret(files);
     const second = interpret(files);
-    expect(second.assertions.map((a) => ({ ...a, source_content_hash: a.source_content_hash })))
-      .toEqual(first.assertions);
+    expect(
+      second.assertions.map((a) => ({ ...a, source_content_hash: a.source_content_hash })),
+    ).toEqual(first.assertions);
     expect(second.profile.profile_hash).toBe(first.profile.profile_hash);
   });
 
@@ -172,18 +173,12 @@ describe("secret safety", () => {
       "secrets_router.py": '@app.get("/leak")\nasync def leak():\n    return 1\n',
     });
     expect(objectsFor(result, "http.route")).toEqual([]);
-    expect(result.diagnostics.map((d) => d.code)).toContain(
-      "interpretation.secret_path_skipped",
-    );
+    expect(result.diagnostics.map((d) => d.code)).toContain("interpretation.secret_path_skipped");
   });
 
   it("persists no secret value from an innocuously named file", () => {
     const result = interpret({
-      "package.json": JSON.stringify(
-        { name: "svc", dependencies: { fastapi: "^1.0.0" } },
-        null,
-        2,
-      ),
+      "package.json": JSON.stringify({ name: "svc", dependencies: { fastapi: "^1.0.0" } }, null, 2),
       "settings.py": 'API_KEY = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"\n',
     });
     const serialized = JSON.stringify(result);
@@ -297,10 +292,15 @@ describe("extractors report, never resolve", () => {
     const spans = (drafts: ReturnType<typeof routeDrafts>, predicate: string) =>
       drafts
         .filter((draft) => draft.predicate === predicate)
-        .map((draft) => `${draft.object} L${draft.sourceRange.start_line}-${draft.sourceRange.end_line}`);
+        .map(
+          (draft) =>
+            `${draft.object} L${draft.sourceRange.start_line}-${draft.sourceRange.end_line}`,
+        );
 
     it("REG-WU-023-RC-098-a: records every route decorator in a stack", () => {
-      const drafts = routeDrafts('@app.get("/items")\n@app.head("/items")\nasync def list_items():\n    return []\n');
+      const drafts = routeDrafts(
+        '@app.get("/items")\n@app.head("/items")\nasync def list_items():\n    return []\n',
+      );
       expect(spans(drafts, "http.route")).toEqual(["GET /items L1-3", "HEAD /items L2-3"]);
       expect(spans(drafts, "http.route_handler")).toEqual([
         "GET /items -> list_items L3-3",
@@ -312,7 +312,8 @@ describe("extractors report, never resolve", () => {
       const result = interpretDocumentContent({
         repositorySubjectId: SUBJECT,
         sourcePath: "app.py",
-        content: '@app.get("/items")\n@app.head("/items")\ndef list_items():\n    # TODO: paginate\n    return []\n',
+        content:
+          '@app.get("/items")\n@app.head("/items")\ndef list_items():\n    # TODO: paginate\n    return []\n',
         extractors: defaultExtractors(),
         pathExists: () => false,
       });
@@ -324,9 +325,14 @@ describe("extractors report, never resolve", () => {
     });
 
     it("REG-WU-023-RC-098-c: a non-route decorator between two routes does not hide the second", () => {
-      const drafts = routeDrafts('@app.get("/a")\n@login_required\n@app.post("/a")\ndef h(): ...\n');
+      const drafts = routeDrafts(
+        '@app.get("/a")\n@login_required\n@app.post("/a")\ndef h(): ...\n',
+      );
       expect(spans(drafts, "http.route")).toEqual(["GET /a L1-4", "POST /a L3-4"]);
-      expect(spans(drafts, "http.route_handler")).toEqual(["GET /a -> h L4-4", "POST /a -> h L4-4"]);
+      expect(spans(drafts, "http.route_handler")).toEqual([
+        "GET /a -> h L4-4",
+        "POST /a -> h L4-4",
+      ]);
     });
 
     it("REG-AUDIT-F11-a: same verb and path on two routers yields one route_handler and distinct assertion ids", () => {
@@ -358,7 +364,12 @@ describe("extractors report, never resolve", () => {
           "",
         ].join("\n"),
       );
-      expect(drafts.map((d) => `${d.predicate} ${d.object} L${d.sourceRange.start_line}-${d.sourceRange.end_line}`)).toEqual([
+      expect(
+        drafts.map(
+          (d) =>
+            `${d.predicate} ${d.object} L${d.sourceRange.start_line}-${d.sourceRange.end_line}`,
+        ),
+      ).toEqual([
         "http.route POST /v1/execute L1-2",
         "http.route_handler POST /v1/execute -> execute L2-2",
         "http.handler_body_marker execute: todo-marker L3-3",
@@ -382,9 +393,7 @@ describe("extractors report, never resolve", () => {
       "contracts/absent.yaml",
       "contracts/present.yaml",
     ]);
-    expect(objectsFor(result, "authority.unresolved_reference")).toEqual([
-      "contracts/absent.yaml",
-    ]);
+    expect(objectsFor(result, "authority.unresolved_reference")).toEqual(["contracts/absent.yaml"]);
     expect(objectsFor(result, "authority.canonical_contract_count")).toEqual(["2"]);
   });
 
@@ -420,9 +429,7 @@ describe("extractors report, never resolve", () => {
       extractors: [exploding],
     });
     expect(result.assertions).toEqual([]);
-    expect(result.diagnostics.map((d) => d.code)).toContain(
-      "interpretation.extractor_failed",
-    );
+    expect(result.diagnostics.map((d) => d.code)).toContain("interpretation.extractor_failed");
   });
 });
 
@@ -438,16 +445,28 @@ describe("interpretation profile 1.4.0 (ADR-082, ADR-084)", () => {
       id: "reporting/v1",
       version: "1.0.0",
       matches: () => true,
-      extract(input: { report?: (d: { code: string; severity: "info" | "warning"; message: string }) => void }) {
+      extract(input: {
+        report?: (d: { code: string; severity: "info" | "warning"; message: string }) => void;
+      }) {
         input.report?.({ code: "reporting.note", severity: "info", message: "seen" });
         return [];
       },
     };
     const result = interpretDocumentContent({
-      repositorySubjectId: "repo:x", sourcePath: "a.md", content: "# A\n", extractors: [reporting], pathExists: () => false,
+      repositorySubjectId: "repo:x",
+      sourcePath: "a.md",
+      content: "# A\n",
+      extractors: [reporting],
+      pathExists: () => false,
     });
     expect(result.diagnostics).toEqual([
-      { code: "reporting.note", severity: "info", message: "seen", extractor_id: "reporting/v1", source_path: "a.md" },
+      {
+        code: "reporting.note",
+        severity: "info",
+        message: "seen",
+        extractor_id: "reporting/v1",
+        source_path: "a.md",
+      },
     ]);
     expect(result.assertions).toEqual([]);
   });

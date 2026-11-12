@@ -99,7 +99,11 @@ function scriptCandidates(importer, target, specifier) {
         return [target];
     if (extension !== "")
         return [target];
-    return [target, ...NODE_EXTENSIONLESS.map((ext) => target + ext), ...NODE_INDEX.map((ext) => target + ext)];
+    return [
+        target,
+        ...NODE_EXTENSIONLESS.map((ext) => target + ext),
+        ...NODE_INDEX.map((ext) => target + ext),
+    ];
 }
 /** A relative target inside the root, or null when it escapes it. */
 function joinInside(importer, relative) {
@@ -109,7 +113,10 @@ function joinInside(importer, relative) {
     return joined;
 }
 function classifyScript(importer, specifier, range, excerpt, input) {
-    if (specifier.startsWith("./") || specifier.startsWith("../") || specifier === "." || specifier === "..") {
+    if (specifier.startsWith("./") ||
+        specifier.startsWith("../") ||
+        specifier === "." ||
+        specifier === "..") {
         const target = joinInside(importer, specifier);
         const found = target === null
             ? undefined
@@ -136,7 +143,20 @@ function classifyScript(importer, specifier, range, excerpt, input) {
 }
 /** Keywords after which a `/` begins a regular expression rather than a division. */
 const REGEX_AFTER_WORD = new Set([
-    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await",
+    "return",
+    "typeof",
+    "instanceof",
+    "in",
+    "of",
+    "new",
+    "delete",
+    "void",
+    "throw",
+    "case",
+    "do",
+    "else",
+    "yield",
+    "await",
 ]);
 /**
  * Tokenize code, skipping comments and the contents of template literals and
@@ -178,9 +198,11 @@ function scanScript(content) {
         // to the end of the line and the whole file would be refused.
         if (previous.kind === "punct" && (previous.value === "+" || previous.value === "-")) {
             const sign = tokens[tokens.length - 2];
-            if (sign?.kind === "punct" && sign.value === previous.value
-                && sign.offset !== undefined && previous.offset === sign.offset + 1
-                && endsExpression(tokens[tokens.length - 3])) {
+            if (sign?.kind === "punct" &&
+                sign.value === previous.value &&
+                sign.offset !== undefined &&
+                previous.offset === sign.offset + 1 &&
+                endsExpression(tokens[tokens.length - 3])) {
                 return false;
             }
         }
@@ -222,7 +244,11 @@ function scanScript(content) {
             index++;
             continue;
         }
-        if (character === " " || character === "\t" || character === "\r" || character === "\f" || character === "\v") {
+        if (character === " " ||
+            character === "\t" ||
+            character === "\r" ||
+            character === "\f" ||
+            character === "\v") {
             index++;
             continue;
         }
@@ -353,7 +379,7 @@ function skipBraces(tokens, at) {
     return -1;
 }
 function isWord(token, value) {
-    return token !== undefined && token.kind === "word" && (value === undefined || token.value === value);
+    return (token !== undefined && token.kind === "word" && (value === undefined || token.value === value));
 }
 function isPunct(token, value) {
     return token !== undefined && token.kind === "punct" && token.value === value;
@@ -379,10 +405,16 @@ function scriptImports(tokens) {
             if (isPunct(tokens[cursor], "."))
                 continue; // import.meta
             if (tokens[cursor]?.kind === "string") {
-                imports.push({ specifier: tokens[cursor].value, startLine: token.line, endLine: tokens[cursor].line });
+                imports.push({
+                    specifier: tokens[cursor].value,
+                    startLine: token.line,
+                    endLine: tokens[cursor].line,
+                });
                 continue;
             }
-            if (isWord(tokens[cursor], "type") && !isWord(tokens[cursor + 1], "from") && !isPunct(tokens[cursor + 1], ","))
+            if (isWord(tokens[cursor], "type") &&
+                !isWord(tokens[cursor + 1], "from") &&
+                !isPunct(tokens[cursor + 1], ","))
                 cursor++;
             if (isWord(tokens[cursor]) && !isWord(tokens[cursor], "from")) {
                 cursor++;
@@ -393,7 +425,9 @@ function scriptImports(tokens) {
             }
             if (isPunct(tokens[cursor], "{"))
                 cursor = skipBraces(tokens, cursor);
-            else if (isPunct(tokens[cursor], "*") && isWord(tokens[cursor + 1], "as") && isWord(tokens[cursor + 2]))
+            else if (isPunct(tokens[cursor], "*") &&
+                isWord(tokens[cursor + 1], "as") &&
+                isWord(tokens[cursor + 2]))
                 cursor += 3;
             if (cursor < 0)
                 continue;
@@ -426,8 +460,14 @@ function scriptImports(tokens) {
             if (isWord(previous, "function"))
                 continue;
             const argument = tokens[index + 2];
-            if (argument?.kind === "string" && isPunct(tokens[index + 3], ")") && !argument.value.startsWith("`")) {
-                imports.push({ specifier: argument.value, startLine: token.line, endLine: tokens[index + 3].line });
+            if (argument?.kind === "string" &&
+                isPunct(tokens[index + 3], ")") &&
+                !argument.value.startsWith("`")) {
+                imports.push({
+                    specifier: argument.value,
+                    startLine: token.line,
+                    endLine: tokens[index + 3].line,
+                });
             }
             else {
                 dynamic++;
@@ -470,7 +510,12 @@ function pythonImports(lines) {
         if (fromMatch) {
             if (fromMatch[1] === "" && !fromMatch[2])
                 continue;
-            imports.push({ level: fromMatch[1].length, module: fromMatch[2] ?? "", line: startIndex + 1, endLine: index + 1 });
+            imports.push({
+                level: fromMatch[1].length,
+                module: fromMatch[2] ?? "",
+                line: startIndex + 1,
+                endLine: index + 1,
+            });
             continue;
         }
         const importMatch = /^import\s+(.+)$/.exec(statement);
@@ -501,9 +546,7 @@ function classifyPython(sourcePath, item, excerpt, input) {
     const stem = item.module === "" ? base : base === "." ? modulePath : `${base}/${modulePath}`;
     const at = (name) => (stem === "." ? name : `${stem}/${name}`);
     // A regular package (`__init__.py`) takes precedence over a module of the same name.
-    const candidates = item.module === ""
-        ? [at("__init__.py")]
-        : [at("__init__.py"), `${stem}.py`, `${stem}.pyi`];
+    const candidates = item.module === "" ? [at("__init__.py")] : [at("__init__.py"), `${stem}.py`, `${stem}.pyi`];
     const found = candidates.find((candidate) => input.pathExists(candidate));
     return found !== undefined
         ? (0, common_1.observed)("source.import.local", found, range, excerpt)

@@ -98,7 +98,11 @@ function pathHolds(canonical, raw, policy) {
         holds.push({ code: "archive.path_unc", memberPath: raw, message: "member path is a UNC path" });
     }
     else if (normalized.startsWith("/")) {
-        holds.push({ code: "archive.path_absolute", memberPath: raw, message: "member path is absolute" });
+        holds.push({
+            code: "archive.path_absolute",
+            memberPath: raw,
+            message: "member path is absolute",
+        });
     }
     if (WINDOWS_DRIVE.test(raw)) {
         holds.push({
@@ -108,10 +112,18 @@ function pathHolds(canonical, raw, policy) {
         });
     }
     if (normalized.split("/").includes("..")) {
-        holds.push({ code: "archive.path_traversal", memberPath: raw, message: "member path contains a '..' component" });
+        holds.push({
+            code: "archive.path_traversal",
+            memberPath: raw,
+            message: "member path contains a '..' component",
+        });
     }
     if (canonical.length === 0) {
-        holds.push({ code: "archive.path_empty", memberPath: raw, message: "member path is empty after normalization" });
+        holds.push({
+            code: "archive.path_empty",
+            memberPath: raw,
+            message: "member path is empty after normalization",
+        });
     }
     if (raw.length > policy.maxPathLength) {
         holds.push({
@@ -208,11 +220,13 @@ function collisionHolds(entry, canonical, accumulator) {
     const previousExact = accumulator.seenExact.get(canonical);
     if (previousExact !== undefined) {
         accumulator.duplicates.add(key);
-        return [{
+        return [
+            {
                 code: "archive.duplicate_member",
                 memberPath: entry.name,
                 message: `member path is declared more than once (also '${previousExact}')`,
-            }];
+            },
+        ];
     }
     accumulator.seenExact.set(canonical, entry.name);
     const previousCollision = accumulator.seenCollision.get(key);
@@ -226,7 +240,8 @@ function collisionHolds(entry, canonical, accumulator) {
 /** Rules that apply only to a file member: compression support and declared size. */
 function fileMemberHolds(entry, policy) {
     const holds = [];
-    if (entry.compressionMethod !== zip_reader_1.COMPRESSION_STORED && entry.compressionMethod !== zip_reader_1.COMPRESSION_DEFLATE) {
+    if (entry.compressionMethod !== zip_reader_1.COMPRESSION_STORED &&
+        entry.compressionMethod !== zip_reader_1.COMPRESSION_DEFLATE) {
         holds.push({
             code: "archive.compression_unsupported",
             memberPath: entry.name,

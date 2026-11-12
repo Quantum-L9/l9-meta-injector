@@ -47,7 +47,7 @@ export interface DurableFileOps {
 /** The real thing, which every caller outside a test uses. */
 export const nodeFileOps: DurableFileOps = {
   openSync: (target, flags, mode) =>
-    (mode === undefined ? fs.openSync(target, flags) : fs.openSync(target, flags, mode)),
+    mode === undefined ? fs.openSync(target, flags) : fs.openSync(target, flags, mode),
   writeSync: (handle, contents) => {
     fs.writeFileSync(handle, contents, "utf8");
   },
@@ -169,12 +169,16 @@ export function replaceFileAtomically(
     existing = null;
   }
   if (existing !== null) {
-    if (existing.isSymbolicLink()) throw new Error(`refusing to replace a symbolic link in place: ${target}`);
+    if (existing.isSymbolicLink())
+      throw new Error(`refusing to replace a symbolic link in place: ${target}`);
     if (!existing.isFile()) throw new Error(`refusing to replace a non-regular file: ${target}`);
     mode = existing.mode & 0o777;
   }
   const directory = path.dirname(target);
-  const staging = path.join(directory, `.${path.basename(target)}.l9stage-${process.pid}-${(stagingCounter++).toString(36)}`);
+  const staging = path.join(
+    directory,
+    `.${path.basename(target)}.l9stage-${process.pid}-${(stagingCounter++).toString(36)}`,
+  );
   const handle = ops.openSync(staging, "wx", mode);
   let staged = false;
   try {

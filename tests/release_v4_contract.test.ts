@@ -221,27 +221,52 @@ describe("release state machine", () => {
   test.each([
     {
       boundary: "nothing published yet",
-      observed: { exactTagSha: null, majorTagSha: null, majorTagVersion: null, releaseExists: false },
+      observed: {
+        exactTagSha: null,
+        majorTagSha: null,
+        majorTagVersion: null,
+        releaseExists: false,
+      },
       expect: { createExact: true, createRelease: true, advanceMajor: true, workPending: true },
     },
     {
       boundary: "exact tag only, rerun must continue",
-      observed: { exactTagSha: HEAD, majorTagSha: null, majorTagVersion: null, releaseExists: false },
+      observed: {
+        exactTagSha: HEAD,
+        majorTagSha: null,
+        majorTagVersion: null,
+        releaseExists: false,
+      },
       expect: { createExact: false, createRelease: true, advanceMajor: true, workPending: true },
     },
     {
       boundary: "exact tag and Release, pointer still stale",
-      observed: { exactTagSha: HEAD, majorTagSha: OTHER, majorTagVersion: "4.0.0", releaseExists: true },
+      observed: {
+        exactTagSha: HEAD,
+        majorTagSha: OTHER,
+        majorTagVersion: "4.0.0",
+        releaseExists: true,
+      },
       expect: { createExact: false, createRelease: false, advanceMajor: true, workPending: true },
     },
     {
       boundary: "Release missing but pointer already moved",
-      observed: { exactTagSha: HEAD, majorTagSha: HEAD, majorTagVersion: RELEASING, releaseExists: false },
+      observed: {
+        exactTagSha: HEAD,
+        majorTagSha: HEAD,
+        majorTagVersion: RELEASING,
+        releaseExists: false,
+      },
       expect: { createExact: false, createRelease: true, advanceMajor: false, workPending: true },
     },
     {
       boundary: "fully published, rerun is a clean no-op",
-      observed: { exactTagSha: HEAD, majorTagSha: HEAD, majorTagVersion: RELEASING, releaseExists: true },
+      observed: {
+        exactTagSha: HEAD,
+        majorTagSha: HEAD,
+        majorTagVersion: RELEASING,
+        releaseExists: true,
+      },
       expect: { createExact: false, createRelease: false, advanceMajor: false, workPending: false },
     },
   ])("$boundary", ({ observed, expect: wanted }) => {
@@ -325,7 +350,14 @@ describe("committed release state", () => {
     expect(lock.packages[""].license).toBe(pkg.license);
     expect(pkg.bin["l9-meta-injector"]).toBe("scripts/operation-cli.js");
     // ADR-079: runtime scripts are listed individually; maintenance tooling is not packed.
-    for (const runtime of ["scripts/operation-cli.js", "scripts/inventory.js", "scripts/check-cli.js", "scripts/apply-cli.js", "scripts/skills-cli.js", "scripts/lib/operation-dispatch.js"]) {
+    for (const runtime of [
+      "scripts/operation-cli.js",
+      "scripts/inventory.js",
+      "scripts/check-cli.js",
+      "scripts/apply-cli.js",
+      "scripts/skills-cli.js",
+      "scripts/lib/operation-dispatch.js",
+    ]) {
       expect(pkg.files).toContain(runtime);
     }
     expect(pkg.files).not.toContain("scripts");
@@ -345,11 +377,14 @@ describe("committed release state", () => {
 // matched as `@v4` and projected to the nonexistent `@v5.1.0`.
 
 describe("release grammar is SemVer-strict (RC-107)", () => {
-  test.each(["4.02.0", "04.2.0", "4.2.00"])("REG-WU-070-RC-107-a: %s is not plain SemVer", (value) => {
-    expect(identity.parseVersion(value)).toBe(null);
-    expect(() => identity.releaseIdentity(value)).toThrow(/is not plain SemVer/);
-    expect(() => identity.compareVersions(value, "4.2.0")).toThrow(/is not plain SemVer/);
-  });
+  test.each(["4.02.0", "04.2.0", "4.2.00"])(
+    "REG-WU-070-RC-107-a: %s is not plain SemVer",
+    (value) => {
+      expect(identity.parseVersion(value)).toBe(null);
+      expect(() => identity.releaseIdentity(value)).toThrow(/is not plain SemVer/);
+      expect(() => identity.compareVersions(value, "4.2.0")).toThrow(/is not plain SemVer/);
+    },
+  );
 
   test.each([
     ["0.0.0", { major: 0, minor: 0, patch: 0 }],
@@ -364,7 +399,9 @@ describe("release grammar is SemVer-strict (RC-107)", () => {
     expect(identity.planPathPattern().exec("v4.02.0-release-plan.json")).toBe(null);
     expect(identity.planPathPattern().exec("v4.10.0-release-plan.json")?.[1]).toBe("4.10.0");
     // The plan directory's real history stays canonical under the stricter grammar.
-    for (const file of fs.readdirSync(path.join(ROOT, "docs/release")).filter((f) => f.endsWith("-release-plan.json"))) {
+    for (const file of fs
+      .readdirSync(path.join(ROOT, "docs/release"))
+      .filter((f) => f.endsWith("-release-plan.json"))) {
       expect(identity.planPathPattern().exec(file), file).not.toBe(null);
     }
     expect(identity.parseReleaseBranch("release/v4.2.0")).toBe("4.2.0");
@@ -386,13 +423,16 @@ describe("consumer-ref projection respects the major boundary (RC-107)", () => {
     expect(identity.findConsumerRefs(`- uses: ${repo}@v4.1.0\n`)).toEqual([]);
   });
 
-  test.each(["\n", " ", "\"", "'", "`", ")", ""])("REG-WU-070-RC-107-e: @v4 and @main followed by %j project to @v5 idempotently", (tail) => {
-    for (const ref of ["v4", "main"]) {
-      const text = `uses: ${repo}@${ref}${tail}`;
-      const once = identity.projectConsumerRefs(text, "v5");
-      expect(once).toBe(`uses: ${repo}@v5${tail}`);
-      expect(identity.projectConsumerRefs(once, "v5")).toBe(once);
-      expect(identity.findConsumerRefs(text)).toEqual([`${repo}@${ref}`]);
-    }
-  });
+  test.each(["\n", " ", '"', "'", "`", ")", ""])(
+    "REG-WU-070-RC-107-e: @v4 and @main followed by %j project to @v5 idempotently",
+    (tail) => {
+      for (const ref of ["v4", "main"]) {
+        const text = `uses: ${repo}@${ref}${tail}`;
+        const once = identity.projectConsumerRefs(text, "v5");
+        expect(once).toBe(`uses: ${repo}@v5${tail}`);
+        expect(identity.projectConsumerRefs(once, "v5")).toBe(once);
+        expect(identity.findConsumerRefs(text)).toEqual([`${repo}@${ref}`]);
+      }
+    },
+  );
 });

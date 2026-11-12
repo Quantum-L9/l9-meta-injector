@@ -49,15 +49,15 @@ exports.expandArchivesUnderRoot = expandArchivesUnderRoot;
 const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const comment_1 = require("./comment");
-const yaml_serialize_1 = require("./yaml_serialize");
-const ordering_1 = require("./ordering");
-const local_source_1 = require("./local_source");
-const archive_preflight_1 = require("./archive_preflight");
 const archive_execution_1 = require("./archive_execution");
-const zip_reader_1 = require("./zip_reader");
 const archive_formats_1 = require("./archive_formats");
+const archive_preflight_1 = require("./archive_preflight");
+const comment_1 = require("./comment");
 const durable_write_1 = require("./durable_write");
+const local_source_1 = require("./local_source");
+const ordering_1 = require("./ordering");
+const yaml_serialize_1 = require("./yaml_serialize");
+const zip_reader_1 = require("./zip_reader");
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 exports.EXTRACTED_DIR_SUFFIX = ".l9extracted";
 /** Archive extensions expanded in local-files mode (v1: zip only). Owned by `archive_formats.ts`. */
@@ -129,7 +129,8 @@ function readExtractionOwnershipV2(directory) {
             return null;
         if (typeof raw.reader_version !== "string" || raw.reader_version.length === 0)
             return null;
-        if (typeof raw.policy_fingerprint !== "string" || !/^lap1:[0-9a-f]{64}$/.test(raw.policy_fingerprint))
+        if (typeof raw.policy_fingerprint !== "string" ||
+            !/^lap1:[0-9a-f]{64}$/.test(raw.policy_fingerprint))
             return null;
         if (typeof raw.created_at !== "string" || Number.isNaN(Date.parse(raw.created_at)))
             return null;
@@ -284,13 +285,16 @@ function streamVerifiedMember(context, member, expandedBytes, sink) {
 function writeMember(context, extractDir, member, expandedBytes) {
     const target = path.join(extractDir, member.canonicalPath);
     const resolvedRoot = path.resolve(extractDir);
-    if (path.resolve(target) !== resolvedRoot && !path.resolve(target).startsWith(resolvedRoot + path.sep)) {
+    if (path.resolve(target) !== resolvedRoot &&
+        !path.resolve(target).startsWith(resolvedRoot + path.sep)) {
         throw new Error(`local-files: refusing to write outside the extraction directory: ${member.canonicalPath}`);
     }
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const handle = fs.openSync(target, "w");
     try {
-        return streamVerifiedMember(context, member, expandedBytes, (chunk) => { fs.writeSync(handle, chunk); });
+        return streamVerifiedMember(context, member, expandedBytes, (chunk) => {
+            fs.writeSync(handle, chunk);
+        });
     }
     finally {
         fs.closeSync(handle);
@@ -313,7 +317,8 @@ function verifyMembersWithoutMaterializing(context, selected) {
 function walkFiles(dir, out) {
     if (!fs.existsSync(dir))
         return;
-    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    const entries = fs
+        .readdirSync(dir, { withFileTypes: true })
         .sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name));
     for (const entry of entries) {
         const full = path.join(dir, entry.name);
@@ -453,7 +458,13 @@ function expandOneArchive(absRoot, zipPath, depth, opts, omit, resolution) {
         }
         const sessionRefusal = context.sessionRefusalReason();
         if (sessionRefusal !== null) {
-            return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: sessionRefusal };
+            return {
+                zipPath,
+                extractDir,
+                memberCount: 0,
+                nestedDepth: depth,
+                heldReason: sessionRefusal,
+            };
         }
         const members = context.preflight.members.map((member) => member.canonicalPath);
         const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);

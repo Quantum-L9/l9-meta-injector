@@ -69,23 +69,31 @@ describe("a ten-thousand-artifact corpus, rescanned", () => {
       verification: "incremental" as const,
       previousSnapshot: cold.snapshot,
     });
-    expect(unchanged.snapshot.verification.verification_class)
-      .toBe("cached_unchanged_assumption");
+    expect(unchanged.snapshot.verification.verification_class).toBe("cached_unchanged_assumption");
     expect(unchanged.snapshot.verification.fully_rehashed_artifact_count).toBe(0);
-    expect(unchanged.snapshot.verification.cached_hash_reuse_count)
-      .toBe(cold.snapshot.verification.fully_rehashed_artifact_count);
+    expect(unchanged.snapshot.verification.cached_hash_reuse_count).toBe(
+      cold.snapshot.verification.fully_rehashed_artifact_count,
+    );
     // Reuse is only worth having if it lands on the same answer.
-    expect(unchanged.snapshot.corpus_source_snapshot_id)
-      .toBe(cold.snapshot.corpus_source_snapshot_id);
+    expect(unchanged.snapshot.corpus_source_snapshot_id).toBe(
+      cold.snapshot.corpus_source_snapshot_id,
+    );
     expect(unchanged.cacheStats.misses).toBe(0);
 
     // ── 4. incremental, one document and one archive rewritten ────────────
     const document = path.join(corpus.roots[0] as string, "shared", "doc-0000.md");
-    fs.writeFileSync(document, "# Shared 0\n\nRewritten, so this cluster loses a member.\n", "utf8");
+    fs.writeFileSync(
+      document,
+      "# Shared 0\n\nRewritten, so this cluster loses a member.\n",
+      "utf8",
+    );
     const archive = path.join(corpus.roots[2] as string, "zips", "bundle-000.zip");
     writeRawZip(archive, [
       { name: "notes/inner.md", content: "# Inner 0\n\nRepacked with a different body.\n" },
-      { name: "notes/shared.md", content: "# Shared member\n\nIdentical in every archive in this corpus.\n" },
+      {
+        name: "notes/shared.md",
+        content: "# Shared member\n\nIdentical in every archive in this corpus.\n",
+      },
     ]);
 
     const changed = await runCorpusScan({
@@ -96,8 +104,9 @@ describe("a ten-thousand-artifact corpus, rescanned", () => {
     // Exactly the two files whose bytes moved were read again; everything else
     // was carried.
     expect(changed.snapshot.verification.fully_rehashed_artifact_count).toBe(2);
-    expect(changed.snapshot.verification.cached_hash_reuse_count)
-      .toBe(cold.snapshot.verification.fully_rehashed_artifact_count - 2);
+    expect(changed.snapshot.verification.cached_hash_reuse_count).toBe(
+      cold.snapshot.verification.fully_rehashed_artifact_count - 2,
+    );
     expect(changed.diff?.source_changed).toBe(true);
     expect(changed.diff?.counts.archive_changed).toBe(1);
     expect(changed.diff?.counts.changed_content).toBeGreaterThanOrEqual(1);
@@ -108,8 +117,9 @@ describe("a ten-thousand-artifact corpus, rescanned", () => {
     );
     expect(misses.embedding).toBe(0);
     expect(changed.cacheStats.hits).toBeGreaterThan(10000);
-    expect(changed.candidates.summary.exact_duplicate_cluster_count)
-      .toBe(cold.candidates.summary.exact_duplicate_cluster_count - 1);
+    expect(changed.candidates.summary.exact_duplicate_cluster_count).toBe(
+      cold.candidates.summary.exact_duplicate_cluster_count - 1,
+    );
 
     // ── 5. --verify-content ───────────────────────────────────────────────
     const verified = await runCorpusScan({
@@ -122,7 +132,8 @@ describe("a ten-thousand-artifact corpus, rescanned", () => {
     expect(verified.snapshot.verification.cached_hash_reuse_count).toBe(0);
     // The corpus as it now stands, byte-verified: the stat-assisted run before it
     // had reached the same answer.
-    expect(verified.snapshot.corpus_source_snapshot_id)
-      .toBe(changed.snapshot.corpus_source_snapshot_id);
+    expect(verified.snapshot.corpus_source_snapshot_id).toBe(
+      changed.snapshot.corpus_source_snapshot_id,
+    );
   }, 900_000);
 });

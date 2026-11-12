@@ -1,5 +1,5 @@
-import { MetaSchema } from "./meta_schema";
 import type { GitIgnoredPaths } from "./git_ignored";
+import { MetaSchema } from "./meta_schema";
 export type InventoryArtifactType = "spec" | "code" | "schema" | "prompt" | "research_markdown" | "research_pdf" | "config" | "test" | "documentation" | "archive" | "folder" | "unknown";
 export type SourceSystem = "dropbox" | "github" | "local" | "upload" | "unknown";
 export interface InventoryRecord {

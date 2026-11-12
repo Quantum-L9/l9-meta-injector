@@ -24,17 +24,17 @@ export type InjectionStrategy =
  * (ADR-057). A shebang line is honoured for every comment strategy without one.
  */
 export type CarrierPrologue =
-  | "xml-declaration"       // `<?xml ...?>` at byte 0, ending its line
-  | "php-open-tag"          // a bare `<?php` line (anything else routes to a sidecar)
-  | "encoding-cookie"       // PEP 263 / Ruby magic comment on line 1, or line 2
-  | "css-charset"           // `@charset "...";` at byte 0, ending its line
+  | "xml-declaration" // `<?xml ...?>` at byte 0, ending its line
+  | "php-open-tag" // a bare `<?php` line (anything else routes to a sidecar)
+  | "encoding-cookie" // PEP 263 / Ruby magic comment on line 1, or line 2
+  | "css-charset" // `@charset "...";` at byte 0, ending its line
   | "dockerfile-directives"; // leading `# syntax=` / `# escape=` / `# check=` lines
 
 export interface StrategySpec {
   strategy: InjectionStrategy;
-  linePrefix?: string;   // line-comment: e.g. "//", "#", "--"
-  blockOpen?: string;    // block-comment open, e.g. "<!--", "/*"
-  blockClose?: string;   // block-comment close, e.g. "-->", "*/"
+  linePrefix?: string; // line-comment: e.g. "//", "#", "--"
+  blockOpen?: string; // block-comment open, e.g. "<!--", "/*"
+  blockClose?: string; // block-comment close, e.g. "-->", "*/"
   /** Mandatory prologue the carrier follows (ADR-057). */
   prologue?: CarrierPrologue;
   /**
@@ -55,57 +55,144 @@ export const PROSE_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", 
 export const FRONTMATTER_EXTS = new Set([".md", ".markdown"]);
 
 const LINE_COMMENT: Record<string, string> = {
-  ".ts": "//", ".tsx": "//", ".js": "//", ".jsx": "//", ".mjs": "//", ".cjs": "//",
-  ".java": "//", ".c": "//", ".h": "//", ".cpp": "//", ".hpp": "//", ".cc": "//", ".hh": "//",
-  ".cs": "//", ".go": "//", ".rs": "//", ".swift": "//", ".kt": "//", ".kts": "//",
-  ".scala": "//", ".php": "//", ".dart": "//", ".groovy": "//", ".proto": "//",
-  ".sol": "//", ".zig": "//", ".v": "//", ".d": "//",
-  ".py": "#", ".rb": "#", ".sh": "#", ".bash": "#", ".zsh": "#", ".fish": "#",
-  ".pl": "#", ".pm": "#", ".r": "#", ".jl": "#", ".yaml": "#", ".yml": "#",
-  ".toml": "#", ".ini": "#", ".cfg": "#", ".conf": "#", ".properties": "#",
-  ".tf": "#", ".tfvars": "#", ".env": "#", ".mk": "#", ".ps1": "#", ".psm1": "#",
-  ".nim": "#", ".ex": "#", ".exs": "#", ".gd": "#", ".coffee": "#", ".dockerfile": "#",
+  ".ts": "//",
+  ".tsx": "//",
+  ".js": "//",
+  ".jsx": "//",
+  ".mjs": "//",
+  ".cjs": "//",
+  ".java": "//",
+  ".c": "//",
+  ".h": "//",
+  ".cpp": "//",
+  ".hpp": "//",
+  ".cc": "//",
+  ".hh": "//",
+  ".cs": "//",
+  ".go": "//",
+  ".rs": "//",
+  ".swift": "//",
+  ".kt": "//",
+  ".kts": "//",
+  ".scala": "//",
+  ".php": "//",
+  ".dart": "//",
+  ".groovy": "//",
+  ".proto": "//",
+  ".sol": "//",
+  ".zig": "//",
+  ".v": "//",
+  ".d": "//",
+  ".py": "#",
+  ".rb": "#",
+  ".sh": "#",
+  ".bash": "#",
+  ".zsh": "#",
+  ".fish": "#",
+  ".pl": "#",
+  ".pm": "#",
+  ".r": "#",
+  ".jl": "#",
+  ".yaml": "#",
+  ".yml": "#",
+  ".toml": "#",
+  ".ini": "#",
+  ".cfg": "#",
+  ".conf": "#",
+  ".properties": "#",
+  ".tf": "#",
+  ".tfvars": "#",
+  ".env": "#",
+  ".mk": "#",
+  ".ps1": "#",
+  ".psm1": "#",
+  ".nim": "#",
+  ".ex": "#",
+  ".exs": "#",
+  ".gd": "#",
+  ".coffee": "#",
+  ".dockerfile": "#",
   // CodeQL: .ql is QL source ('//' comments); .qls is a query suite (YAML).
-  ".ql": "//", ".qls": "#",
+  ".ql": "//",
+  ".qls": "#",
   // Sass indented syntax: '/*' comments are indentation-scoped, '//' lines are silent.
   ".sass": "//",
-  ".sql": "--", ".lua": "--", ".hs": "--", ".elm": "--", ".adb": "--", ".ads": "--",
-  ".lisp": ";", ".clj": ";", ".cljs": ";", ".cljc": ";", ".el": ";", ".scm": ";",
+  ".sql": "--",
+  ".lua": "--",
+  ".hs": "--",
+  ".elm": "--",
+  ".adb": "--",
+  ".ads": "--",
+  ".lisp": ";",
+  ".clj": ";",
+  ".cljs": ";",
+  ".cljc": ";",
+  ".el": ";",
+  ".scm": ";",
   // .s (assembler dialects) and .m (MATLAB / Objective-C) need verified dialects;
   // their filenames alone cannot authorize an inert comment carrier.
   ".asm": ";",
-  ".tex": "%", ".erl": "%",
+  ".tex": "%",
+  ".erl": "%",
 };
 
 // Files with no extension (or dotfiles whose whole name is the "extension").
 const BASENAME_LINE_COMMENT: Record<string, string> = {
-  "dockerfile": "#", "makefile": "#", "gnumakefile": "#", "rakefile": "#",
-  "gemfile": "#", "vagrantfile": "#", "brewfile": "#", "procfile": "#",
-  ".gitignore": "#", ".npmignore": "#", ".dockerignore": "#", ".gitattributes": "#",
-  ".env": "#", ".bashrc": "#", ".zshrc": "#", ".profile": "#", ".editorconfig": "#",
-  "codeowners": "#",
-  ".env.example": "#", ".l9metaignore": "#",
+  dockerfile: "#",
+  makefile: "#",
+  gnumakefile: "#",
+  rakefile: "#",
+  gemfile: "#",
+  vagrantfile: "#",
+  brewfile: "#",
+  procfile: "#",
+  ".gitignore": "#",
+  ".npmignore": "#",
+  ".dockerignore": "#",
+  ".gitattributes": "#",
+  ".env": "#",
+  ".bashrc": "#",
+  ".zshrc": "#",
+  ".profile": "#",
+  ".editorconfig": "#",
+  codeowners: "#",
+  ".env.example": "#",
+  ".l9metaignore": "#",
 };
 
 const BLOCK_COMMENT: Record<string, { open: string; close: string }> = {
-  ".html": { open: "<!--", close: "-->" }, ".htm": { open: "<!--", close: "-->" },
-  ".xml": { open: "<!--", close: "-->" }, ".xhtml": { open: "<!--", close: "-->" },
-  ".svg": { open: "<!--", close: "-->" }, ".vue": { open: "<!--", close: "-->" },
-  ".xsl": { open: "<!--", close: "-->" }, ".xslt": { open: "<!--", close: "-->" },
-  ".css": { open: "/*", close: "*/" }, ".scss": { open: "/*", close: "*/" },
+  ".html": { open: "<!--", close: "-->" },
+  ".htm": { open: "<!--", close: "-->" },
+  ".xml": { open: "<!--", close: "-->" },
+  ".xhtml": { open: "<!--", close: "-->" },
+  ".svg": { open: "<!--", close: "-->" },
+  ".vue": { open: "<!--", close: "-->" },
+  ".xsl": { open: "<!--", close: "-->" },
+  ".xslt": { open: "<!--", close: "-->" },
+  ".css": { open: "/*", close: "*/" },
+  ".scss": { open: "/*", close: "*/" },
   ".less": { open: "/*", close: "*/" },
 };
 
 // Mandatory prologues per extension / extension-less basename (ADR-057).
 const PROLOGUE_BY_EXT: Record<string, CarrierPrologue> = {
-  ".xml": "xml-declaration", ".svg": "xml-declaration", ".xsl": "xml-declaration",
-  ".xslt": "xml-declaration", ".xhtml": "xml-declaration",
+  ".xml": "xml-declaration",
+  ".svg": "xml-declaration",
+  ".xsl": "xml-declaration",
+  ".xslt": "xml-declaration",
+  ".xhtml": "xml-declaration",
   ".php": "php-open-tag",
-  ".py": "encoding-cookie", ".pyw": "encoding-cookie", ".rb": "encoding-cookie",
-  ".css": "css-charset", ".scss": "css-charset", ".less": "css-charset",
+  ".py": "encoding-cookie",
+  ".pyw": "encoding-cookie",
+  ".rb": "encoding-cookie",
+  ".css": "css-charset",
+  ".scss": "css-charset",
+  ".less": "css-charset",
   ".dockerfile": "dockerfile-directives",
 };
-const PROLOGUE_BY_BASENAME: Record<string, CarrierPrologue> = { "dockerfile": "dockerfile-directives" };
+const PROLOGUE_BY_BASENAME: Record<string, CarrierPrologue> = {
+  dockerfile: "dockerfile-directives",
+};
 
 // Delimiters written before ADR-057 corrected the table; recognised for one repair.
 const LEGACY_CARRIER_BY_EXT: Record<string, StrategySpec> = {
@@ -118,14 +205,48 @@ const SIDECAR_EXTS = new Set([".json", ".jsonc", ".json5", ".geojson", ".csv", "
 
 // Known binary / media extensions → skip (never inspected as text).
 const BINARY_EXTS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff",
-  ".pdf", ".mp3", ".mp4", ".wav", ".flac", ".ogg", ".mov", ".avi", ".mkv", ".webm",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".ico",
+  ".tif",
+  ".tiff",
+  ".pdf",
+  ".mp3",
+  ".mp4",
+  ".wav",
+  ".flac",
+  ".ogg",
+  ".mov",
+  ".avi",
+  ".mkv",
+  ".webm",
   // Every archive extension the package recognizes, expandable or not (one owner).
   ...ARCHIVE_EXTENSIONS,
-  ".woff", ".woff2", ".ttf", ".eot", ".otf",
-  ".exe", ".dll", ".so", ".dylib", ".class", ".o", ".a", ".lib", ".wasm", ".bin", ".dat",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".eot",
+  ".otf",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".class",
+  ".o",
+  ".a",
+  ".lib",
+  ".wasm",
+  ".bin",
+  ".dat",
   // Bytecode / ephemeral noise — skip entirely (no sidecar, no inventory inject).
-  ".pyc", ".pyo", ".pyd", ".log",
+  ".pyc",
+  ".pyo",
+  ".pyd",
+  ".log",
 ]);
 
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */
@@ -147,10 +268,17 @@ export function resolveStrategy(filePath: string, raw: string): StrategySpec {
   if (FRONTMATTER_EXTS.has(ext)) return { strategy: "yaml-frontmatter" };
 
   const linePrefix = LINE_COMMENT[ext] ?? BASENAME_LINE_COMMENT[base];
-  if (linePrefix) return withCarrierPosition({ strategy: "line-comment", linePrefix }, ext, base, raw);
+  if (linePrefix)
+    return withCarrierPosition({ strategy: "line-comment", linePrefix }, ext, base, raw);
 
   const block = BLOCK_COMMENT[ext];
-  if (block) return withCarrierPosition({ strategy: "block-comment", blockOpen: block.open, blockClose: block.close }, ext, base, raw);
+  if (block)
+    return withCarrierPosition(
+      { strategy: "block-comment", blockOpen: block.open, blockClose: block.close },
+      ext,
+      base,
+      raw,
+    );
 
   if (SIDECAR_EXTS.has(ext)) return { strategy: "sidecar" };
 
@@ -172,7 +300,11 @@ export function hasCommentCarrierFamily(filePath: string, strategy?: InjectionSt
   if (BINARY_EXTS.has(ext)) return false;
   const line = LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined;
   const block = BLOCK_COMMENT[ext] !== undefined;
-  return strategy === "line-comment" ? line : strategy === "block-comment" ? block : strategy === undefined && (line || block);
+  return strategy === "line-comment"
+    ? line
+    : strategy === "block-comment"
+      ? block
+      : strategy === undefined && (line || block);
 }
 
 export function sidecarPathFor(filePath: string): string {
@@ -224,11 +356,19 @@ export function carrierForbiddenSequences(spec: StrategySpec): string[] {
  * Inner YAML that still holds a carrier-forbidden sequence is refused rather than
  * written as a broken host file (CARRIER_UNREPRESENTABLE).
  */
-export function yamlToBlock(yamlInner: string, spec: StrategySpec, newline: NewlineConvention = "\n"): string {
+export function yamlToBlock(
+  yamlInner: string,
+  spec: StrategySpec,
+  newline: NewlineConvention = "\n",
+): string {
   const lines = yamlInner.split(/\r?\n/);
-  const hazard = carrierForbiddenSequences(spec).find((seq) => lines.some((line) => line.includes(seq)));
+  const hazard = carrierForbiddenSequences(spec).find((seq) =>
+    lines.some((line) => line.includes(seq)),
+  );
   if (hazard !== undefined) {
-    throw new Error(`CARRIER_UNREPRESENTABLE: the ${spec.strategy} block cannot hold ${JSON.stringify(hazard)}; serialize with carrierForbiddenSequences(spec)`);
+    throw new Error(
+      `CARRIER_UNREPRESENTABLE: the ${spec.strategy} block cannot hold ${JSON.stringify(hazard)}; serialize with carrierForbiddenSequences(spec)`,
+    );
   }
   if (spec.strategy === "line-comment") {
     const p = spec.linePrefix!;
@@ -236,7 +376,9 @@ export function yamlToBlock(yamlInner: string, spec: StrategySpec, newline: Newl
     return out.join(newline);
   }
   if (spec.strategy === "block-comment") {
-    return [`${spec.blockOpen} ${BLOCK_START}`, ...lines, `${BLOCK_END} ${spec.blockClose}`].join(newline);
+    return [`${spec.blockOpen} ${BLOCK_START}`, ...lines, `${BLOCK_END} ${spec.blockClose}`].join(
+      newline,
+    );
   }
   throw new Error(`yamlToBlock: unsupported strategy ${spec.strategy}`);
 }
@@ -274,14 +416,21 @@ const REST_OF_LINE_BLANK = /^[ \t]*$/;
  * end its line). `unterminated` means the last prologue line ends the file without a
  * line terminator, so insertion must supply one (and strip removes it again).
  */
-interface CarrierPosition { offset: number; unterminated: boolean }
+interface CarrierPosition {
+  offset: number;
+  unterminated: boolean;
+}
 
 function carrierPosition(text: string, spec?: StrategySpec): CarrierPosition | null {
   const start = text.startsWith(BOM) ? BOM.length : 0;
   let pos = start;
   let lastTerminated = true;
   let consumed = 0;
-  const take = (line: TextLine): void => { pos = line.next; lastTerminated = line.terminated; consumed++; };
+  const take = (line: TextLine): void => {
+    pos = line.next;
+    lastTerminated = line.terminated;
+    consumed++;
+  };
 
   if (text.startsWith("#!", pos)) take(lineAt(text, pos));
 
@@ -292,7 +441,10 @@ function carrierPosition(text: string, spec?: StrategySpec): CarrierPosition | n
       if (pos < text.length && ENCODING_COOKIE.test(line.content)) take(line);
       else if (consumed === 0 && line.terminated && COMMENT_OR_BLANK.test(line.content)) {
         const second = lineAt(text, line.next);
-        if (ENCODING_COOKIE.test(second.content)) { take(line); take(second); }
+        if (ENCODING_COOKIE.test(second.content)) {
+          take(line);
+          take(second);
+        }
       }
       break;
     }
@@ -319,7 +471,11 @@ function carrierPosition(text: string, spec?: StrategySpec): CarrierPosition | n
       break;
     }
     case "dockerfile-directives": {
-      for (let line = lineAt(text, pos); pos < text.length && DOCKER_DIRECTIVE.test(line.content); line = lineAt(text, pos)) {
+      for (
+        let line = lineAt(text, pos);
+        pos < text.length && DOCKER_DIRECTIVE.test(line.content);
+        line = lineAt(text, pos)
+      ) {
         take(line);
       }
       break;
@@ -336,7 +492,12 @@ function isCommentStrategy(spec: StrategySpec): boolean {
 }
 
 /** Fill the prologue/legacy descriptors; route to a sidecar when no inert position exists. */
-function withCarrierPosition(spec: StrategySpec, ext: string, base: string, raw: string): StrategySpec {
+function withCarrierPosition(
+  spec: StrategySpec,
+  ext: string,
+  base: string,
+  raw: string,
+): StrategySpec {
   const prologue = PROLOGUE_BY_EXT[ext] ?? PROLOGUE_BY_BASENAME[base];
   const legacy = LEGACY_CARRIER_BY_EXT[ext];
   const resolved: StrategySpec = { ...spec };
@@ -379,10 +540,16 @@ function blockAt(text: string, pos: number, spec: StrategySpec): BlockSpan | nul
   while (cursor < text.length) {
     const line = lineAt(text, cursor);
     if (line.content.trimEnd() === close) {
-      return { start: pos, blockEnd: cursor + line.content.length, end: line.next, delimiters: spec };
+      return {
+        start: pos,
+        blockEnd: cursor + line.content.length,
+        end: line.next,
+        delimiters: spec,
+      };
     }
     // Every line of a line-comment block is a comment; anything else is body.
-    if (spec.strategy === "line-comment" && !line.content.trimStart().startsWith(spec.linePrefix!)) return null;
+    if (spec.strategy === "line-comment" && !line.content.trimStart().startsWith(spec.linePrefix!))
+      return null;
     cursor = line.next;
   }
   return null;
@@ -402,9 +569,10 @@ function findHeadBlock(text: string, spec: StrategySpec): HeadBlock | null {
   if (!isCommentStrategy(spec)) return null;
   const bomLength = text.startsWith(BOM) ? BOM.length : 0;
   const position = carrierPosition(text, spec);
-  const offsets = position && !position.unterminated && position.offset !== bomLength
-    ? [position.offset, bomLength]
-    : [bomLength];
+  const offsets =
+    position && !position.unterminated && position.offset !== bomLength
+      ? [position.offset, bomLength]
+      : [bomLength];
   const forms = spec.legacyCarrier ? [spec, spec.legacyCarrier] : [spec];
   for (const offset of offsets) {
     for (const form of forms) {
@@ -414,8 +582,9 @@ function findHeadBlock(text: string, spec: StrategySpec): HeadBlock | null {
       // Insertion supplied the prologue's missing terminator and wrote no newline
       // after the block: remove that terminator again so strip(inject(x)) === x.
       if (span.end === text.length && span.end === span.blockEnd && offset > bomLength) {
-        const crlf = text.slice(offset - 2, offset) === "\r\n"
-          && detectNewlineConvention(text.slice(0, offset - 2)) === "\r\n";
+        const crlf =
+          text.slice(offset - 2, offset) === "\r\n" &&
+          detectNewlineConvention(text.slice(0, offset - 2)) === "\r\n";
         removeFrom = offset - (crlf ? 2 : 1);
       }
       return { ...span, removeFrom };
@@ -443,7 +612,10 @@ export function hasInjectedBlock(raw: string, spec: StrategySpec): boolean {
  * extract use, exposed so a reader can cite the block's exact span (ADR-082)
  * without a second implementation of where a managed block may sit.
  */
-export function injectedBlockSpan(raw: string, spec: StrategySpec): { start: number; end: number; delimiters: StrategySpec } | null {
+export function injectedBlockSpan(
+  raw: string,
+  spec: StrategySpec,
+): { start: number; end: number; delimiters: StrategySpec } | null {
   const head = findHeadBlock(raw, spec);
   return head ? { start: head.start, end: head.blockEnd, delimiters: head.delimiters } : null;
 }
@@ -457,7 +629,10 @@ export function extractInjectedYaml(raw: string, spec: StrategySpec): string | n
   const inner = raw.slice(head.start, head.blockEnd).split(/\r?\n/).slice(1, -1);
   if (head.delimiters.strategy === "line-comment") {
     const p = head.delimiters.linePrefix!;
-    return inner.map((l) => l.replace(new RegExp(String.raw`^\s*${esc(p)} ?`), "")).join("\n").trim();
+    return inner
+      .map((l) => l.replace(new RegExp(String.raw`^\s*${esc(p)} ?`), ""))
+      .join("\n")
+      .trim();
   }
   return inner.join("\n").trim();
 }
@@ -482,7 +657,9 @@ export function applyCommentInjection(
 ): string {
   const position = carrierPosition(cleanBody, spec);
   if (!position) {
-    throw new Error(`applyCommentInjection: no inert carrier position for prologue '${spec?.prologue ?? "none"}'; resolveStrategy routes such a file to a sidecar`);
+    throw new Error(
+      `applyCommentInjection: no inert carrier position for prologue '${spec?.prologue ?? "none"}'; resolveStrategy routes such a file to a sidecar`,
+    );
   }
   if (position.unterminated) return `${cleanBody}${newline}${block}`;
   return `${cleanBody.slice(0, position.offset)}${block}${newline}${cleanBody.slice(position.offset)}`;

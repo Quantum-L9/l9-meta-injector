@@ -8,7 +8,8 @@ const real = initialExecutable();
 if (real === null) throw new Error("Runtime tests require installed Git");
 const originalPath = process.env.PATH;
 afterEach(() => {
-  if (originalPath === undefined) delete process.env.PATH; else process.env.PATH = originalPath;
+  if (originalPath === undefined) delete process.env.PATH;
+  else process.env.PATH = originalPath;
   vi.resetModules();
   cleanupGitFixtures();
 });
@@ -30,7 +31,9 @@ describe.skipIf(process.platform === "win32")("shared internal Git runtime", () 
   it("skips relative and empty PATH entries and pins an absolute executable", async () => {
     const root = scratchDirectory();
     stub(root);
-    expect(await resolveWith([".", "relative-bin", "", path.dirname(real!)].join(path.delimiter))).toBe(real);
+    expect(
+      await resolveWith([".", "relative-bin", "", path.dirname(real!)].join(path.delimiter)),
+    ).toBe(real);
     const runtime = await import("../src/git_runtime");
     process.env.PATH = root;
     expect(runtime.gitExecutable()).toBe(real);
@@ -39,7 +42,13 @@ describe.skipIf(process.platform === "win32")("shared internal Git runtime", () 
   it("returns missing for relative-only PATH and rejects exact census explicitly", async () => {
     expect(await resolveWith([".", "relative-bin", ""].join(path.delimiter))).toBeNull();
     const { readTrackedGitSnapshot } = await import("../src/git_tree");
-    expect(() => readTrackedGitSnapshot({ root: scratchDirectory(), revision: "HEAD", repositoryId: "fixture" })).toThrow(/absolute Git executable/);
+    expect(() =>
+      readTrackedGitSnapshot({
+        root: scratchDirectory(),
+        revision: "HEAD",
+        repositoryId: "fixture",
+      }),
+    ).toThrow(/absolute Git executable/);
     const { listGitIgnoredUntracked } = await import("../src/git_ignored");
     expect(listGitIgnoredUntracked(scratchDirectory())).toBeUndefined();
   });
@@ -50,7 +59,9 @@ describe.skipIf(process.platform === "win32")("shared internal Git runtime", () 
     fs.chmodSync(path.join(nonexecutable, "git"), 0o644);
     const directory = scratchDirectory();
     fs.mkdirSync(path.join(directory, "git"));
-    expect(await resolveWith([nonexecutable, directory, path.dirname(real!)].join(path.delimiter))).toBe(real);
+    expect(
+      await resolveWith([nonexecutable, directory, path.dirname(real!)].join(path.delimiter)),
+    ).toBe(real);
   });
 
   it("a bounded real process timeout fails rather than claiming a partial census", async () => {
@@ -58,7 +69,9 @@ describe.skipIf(process.platform === "win32")("shared internal Git runtime", () 
     stub(root, `#!${process.execPath}\nsetTimeout(() => {}, 10000);\n`);
     expect(await resolveWith(root)).toBe(path.join(root, "git"));
     const { readTrackedGitSnapshot } = await import("../src/git_tree");
-    expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId: "fixture", timeoutMs: 40 })).toThrow(/timed out/);
+    expect(() =>
+      readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId: "fixture", timeoutMs: 40 }),
+    ).toThrow(/timed out/);
   });
 
   it("a real oversized subprocess output is never parsed as successful tree evidence", async () => {
@@ -66,16 +79,26 @@ describe.skipIf(process.platform === "win32")("shared internal Git runtime", () 
     stub(root, `#!${process.execPath}\nrequire('node:fs').writeSync(1, Buffer.alloc(4096, 65));\n`);
     expect(await resolveWith(root)).toBe(path.join(root, "git"));
     const { readTrackedGitSnapshot } = await import("../src/git_tree");
-    expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId: "fixture", maxOutputBytes: 32 })).toThrow(/cap/);
+    expect(() =>
+      readTrackedGitSnapshot({
+        root,
+        revision: "HEAD",
+        repositoryId: "fixture",
+        maxOutputBytes: 32,
+      }),
+    ).toThrow(/cap/);
   });
 });
 
-
 describe.skipIf(process.platform === "win32")("include bootstrap admission", () => {
   it("rejects include control before launching even a Git that would bootstrap includes", async () => {
-    const executableRoot = scratchDirectory(), repository = scratchDirectory();
+    const executableRoot = scratchDirectory(),
+      repository = scratchDirectory();
     const launched = path.join(executableRoot, "launched");
-    stub(executableRoot, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(launched)}, 'launched');process.exit(42);\n`);
+    stub(
+      executableRoot,
+      `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(launched)}, 'launched');process.exit(42);\n`,
+    );
     fs.mkdirSync(path.join(repository, "objects"));
     fs.writeFileSync(path.join(repository, "HEAD"), "ref: refs/heads/main\n");
     fs.writeFileSync(path.join(repository, "config"), "[include]\n  path = payload.conf\n");
@@ -84,6 +107,8 @@ describe.skipIf(process.platform === "win32")("include bootstrap admission", () 
     const { readOnlyGitRunner } = await import("../src/git_runtime");
     expect(() => readOnlyGitRunner(repository)).toThrow(/configuration includes are unsupported/);
     expect(fs.existsSync(launched)).toBe(false);
-    expect(fs.readFileSync(path.join(repository, "payload.conf"), "utf8")).toBe("not a Git configuration payload\n");
+    expect(fs.readFileSync(path.join(repository, "payload.conf"), "utf8")).toBe(
+      "not a Git configuration payload\n",
+    );
   });
 });

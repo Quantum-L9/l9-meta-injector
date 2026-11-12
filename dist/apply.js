@@ -35,24 +35,28 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runApplyAsync = runApplyAsync;
+const node_crypto_1 = require("node:crypto");
 const fs = __importStar(require("node:fs"));
 const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
-const node_crypto_1 = require("node:crypto");
 const authority_scan_1 = require("./authority_scan");
 const carrier_operation_1 = require("./carrier_operation");
-const metadata_index_1 = require("./metadata_index");
+const discovery_contracts_1 = require("./discovery_contracts");
 const file_transaction_1 = require("./file_transaction");
 const inject_1 = require("./inject");
-const discovery_contracts_1 = require("./discovery_contracts");
-const verify_1 = require("./verify");
+const metadata_index_1 = require("./metadata_index");
 const ordering_1 = require("./ordering");
+const verify_1 = require("./verify");
 function sha256(bytes) {
     return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
 }
 function relativePath(root, target) {
     const rel = path.relative(root, target);
-    if (!rel || rel === "." || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    if (!rel ||
+        rel === "." ||
+        rel === ".." ||
+        rel.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(rel)) {
         throw new Error(`apply target escapes or equals repository root: ${target}`);
     }
     return rel.split(path.sep).join("/");
@@ -98,7 +102,9 @@ function renderInlineBytes(root, planned, outDir) {
     if (!planned.targetPath || planned.targetPath !== planned.sourcePath) {
         throw new Error(`inline mutation target must equal source: ${planned.sourcePath}`);
     }
-    if (!planned.expectedContentHash || planned.wouldChange === undefined || planned.targetExists === undefined) {
+    if (!planned.expectedContentHash ||
+        planned.wouldChange === undefined ||
+        planned.targetExists === undefined) {
         throw new Error(`inline mutation plan is incomplete: ${planned.sourcePath}`);
     }
     if (!["yaml-frontmatter", "line-comment", "block-comment"].includes(planned.injectionStrategy ?? "")) {
@@ -115,7 +121,9 @@ function renderInlineBytes(root, planned, outDir) {
             writeInjectLog: false,
             writeDryRunDiff: false,
         });
-        if (rendered.injectionStrategy !== planned.injectionStrategy || rendered.sidecarPath || rendered.injectLogPath) {
+        if (rendered.injectionStrategy !== planned.injectionStrategy ||
+            rendered.sidecarPath ||
+            rendered.injectLogPath) {
             throw new Error(`carrier policy violation while rendering ${planned.sourcePath}`);
         }
         const bytes = fs.readFileSync(renderTarget);
@@ -160,7 +168,9 @@ function buildMutationIntents(root, plan, outDir) {
     if (base?.unmergeableReason)
         throw new Error(`METADATA_INDEX_UNMERGEABLE: ${base.unmergeableReason}`);
     const indexState = base
-        ? (base.exists ? { expectedExists: true, expectedHash: base.sha256 } : { expectedExists: false })
+        ? base.exists
+            ? { expectedExists: true, expectedHash: base.sha256 }
+            : { expectedExists: false }
         : current;
     const desiredIndexHash = sha256(plan.metadataIndex.bytes);
     if (indexState.expectedHash !== desiredIndexHash) {
@@ -250,8 +260,8 @@ async function runApplyAsync(config) {
     });
     if (transaction.cleanupPending) {
         // Bytes are committed; only post-commit cleanup is left for the next run's recovery.
-        warnings.push(`metadata transaction ${transaction.transactionId ?? "unknown"} committed but cleanup is pending `
-            + `(${transaction.cleanupPending.journalPath}); the next apply finalizes it`);
+        warnings.push(`metadata transaction ${transaction.transactionId ?? "unknown"} committed but cleanup is pending ` +
+            `(${transaction.cleanupPending.journalPath}); the next apply finalizes it`);
     }
     const inlineChanged = transaction.changedPaths.filter((item) => item !== metadata_index_1.METADATA_INDEX_RELATIVE_PATH);
     const metadataIndexChanged = transaction.changedPaths.includes(metadata_index_1.METADATA_INDEX_RELATIVE_PATH);

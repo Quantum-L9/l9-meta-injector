@@ -1,6 +1,6 @@
-import { ScanEntry } from "./schema";
-import { OmitMatcher } from "./omit";
 import { DiscoverySummary } from "./discovery_contracts";
+import { OmitMatcher } from "./omit";
+import { ScanEntry } from "./schema";
 export interface FindFilesOptions {
     /** Extra omit patterns in gitignore syntax. */
     omitPatterns?: string[];
