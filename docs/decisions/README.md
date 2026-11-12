@@ -74,6 +74,8 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-091](091-local-source-adaptive-field-selection.md) | Adaptive field selection for local-source, as a derived view | Proposed |
 | [ADR-092](092-corpus-generated-at-pins-recorded-times.md) | A pinned --generated-at pins every time a corpus generation records | Proposed |
 | [ADR-093](093-retire-committed-per-pr-generated-artifacts.md) | Retire the committed validation report and architecture manifest | Accepted |
+| [ADR-094](094-dependency-updates-follow-the-organization-render.md) | Dependency updates follow the organization's rendered Dependabot configuration | Accepted |
+| [ADR-095](095-biome-org-standard-alongside-eslint.md) | Adopt the Core-locked Biome contract alongside ESLint | Proposed |
 
 ## Authority boundary
 
