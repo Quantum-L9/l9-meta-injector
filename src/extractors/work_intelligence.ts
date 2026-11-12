@@ -978,6 +978,52 @@ export function documentText(value: string): string {
   return plainText(value);
 }
 
+/**
+ * The `Label: value` grammar, for a reader with its own label vocabulary.
+ *
+ * Exported for the architecture-statement reader (`./architecture_statements`),
+ * which recognizes `Objective:`, `Constraint:`, `Decision:` and the rest with
+ * exactly the line shape this module accepts for `Status:` and `Depends on:`.
+ * A second definition of "what is a labelled line" would eventually accept a
+ * line this one refuses, and the two vocabularies would then disagree about
+ * whether a document declared anything at all.
+ *
+ * The label is returned normalized (emphasis removed, lowercased); the value is
+ * as written after the colon, with leading emphasis trimmed. Null when the line
+ * has no label of the accepted shape. Recognizing the label is not the same as
+ * reading a signal: this function says nothing about the vocabulary.
+ */
+export function readLabelledLine(line: string): { label: string; value: string } | null {
+  return labelledLine(line);
+}
+
+/**
+ * One frontmatter line under the YAML scalar rules this reader applies (RC-024).
+ *
+ * Exported for the architecture-statement reader, which meets frontmatter as
+ * decoded blocks rather than as `DocumentView` lines but must agree with this
+ * module about what a frontmatter key, a trailing comment and a block-scalar
+ * header are. `blockScalar` is the header (`|`, `>-` …) when the value is one,
+ * and `value` is then empty: the header announces a value on the following lines
+ * and is never the value itself. Null when the line is not a `key: value` line.
+ */
+export function readFrontmatterLine(
+  line: string,
+): { key: string; value: string; blockScalar: string | null } | null {
+  const colon = line.indexOf(":");
+  if (colon < 0) return null;
+  const key = line.slice(0, colon).trimEnd();
+  if (!FRONTMATTER_KEY.test(key)) return null;
+  const value = withoutYamlComment(line.slice(colon + 1).trim());
+  if (BLOCK_SCALAR_HEADER.test(value)) return { key: key.toLowerCase(), value: "", blockScalar: value };
+  return { key: key.toLowerCase(), value, blockScalar: null };
+}
+
+/** The frontmatter delimiters `findFrontmatter` accepts, and its line bound. */
+export const FRONTMATTER_OPEN_DELIMITER = "---";
+export const FRONTMATTER_CLOSE_DELIMITERS: readonly string[] = ["---", "..."];
+export const FRONTMATTER_LINE_LIMIT = MAX_FRONTMATTER_LINES;
+
 /** How far into a document a bare status admonition still counts as leading. */
 export const LEADING_ADMONITION_UNITS = LEADING_ADMONITION_LINES;
 

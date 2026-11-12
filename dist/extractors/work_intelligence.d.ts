@@ -58,6 +58,44 @@ export declare function readTitleMarkers(text: string, excerpt: string): SignalR
 export declare function isMilestoneSectionHeading(text: string): boolean;
 /** Normalize a fragment of document text for use as an assertion object. */
 export declare function documentText(value: string): string;
+/**
+ * The `Label: value` grammar, for a reader with its own label vocabulary.
+ *
+ * Exported for the architecture-statement reader (`./architecture_statements`),
+ * which recognizes `Objective:`, `Constraint:`, `Decision:` and the rest with
+ * exactly the line shape this module accepts for `Status:` and `Depends on:`.
+ * A second definition of "what is a labelled line" would eventually accept a
+ * line this one refuses, and the two vocabularies would then disagree about
+ * whether a document declared anything at all.
+ *
+ * The label is returned normalized (emphasis removed, lowercased); the value is
+ * as written after the colon, with leading emphasis trimmed. Null when the line
+ * has no label of the accepted shape. Recognizing the label is not the same as
+ * reading a signal: this function says nothing about the vocabulary.
+ */
+export declare function readLabelledLine(line: string): {
+    label: string;
+    value: string;
+} | null;
+/**
+ * One frontmatter line under the YAML scalar rules this reader applies (RC-024).
+ *
+ * Exported for the architecture-statement reader, which meets frontmatter as
+ * decoded blocks rather than as `DocumentView` lines but must agree with this
+ * module about what a frontmatter key, a trailing comment and a block-scalar
+ * header are. `blockScalar` is the header (`|`, `>-` …) when the value is one,
+ * and `value` is then empty: the header announces a value on the following lines
+ * and is never the value itself. Null when the line is not a `key: value` line.
+ */
+export declare function readFrontmatterLine(line: string): {
+    key: string;
+    value: string;
+    blockScalar: string | null;
+} | null;
+/** The frontmatter delimiters `findFrontmatter` accepts, and its line bound. */
+export declare const FRONTMATTER_OPEN_DELIMITER = "---";
+export declare const FRONTMATTER_CLOSE_DELIMITERS: readonly string[];
+export declare const FRONTMATTER_LINE_LIMIT = 200;
 /** How far into a document a bare status admonition still counts as leading. */
 export declare const LEADING_ADMONITION_UNITS = 10;
 /**

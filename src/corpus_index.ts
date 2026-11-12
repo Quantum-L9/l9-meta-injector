@@ -201,6 +201,18 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
     path: "document-work-signals.manifest.json",
     schema: "l9.document-work-signals-manifest/v1",
   },
+  // Opt-in (`--architecture-evidence`). Listed whether or not the run selected
+  // it, so a reader can tell "not asked for" from "written somewhere else".
+  {
+    name: "architecture_evidence",
+    path: "architecture-evidence.jsonl",
+    schema: "l9.architecture-evidence/v1",
+  },
+  {
+    name: "architecture_evidence_manifest",
+    path: "architecture-evidence.manifest.json",
+    schema: "l9.architecture-evidence-manifest/v1",
+  },
   { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
   { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },
@@ -212,6 +224,20 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
   { name: "reasoning_candidates", path: "reasoning-candidates.jsonl", schema: null },
   { name: "reasoning_evidence_packs", path: "reasoning-evidence-packs.jsonl", schema: null },
   { name: "report", path: "corpus-report.md", schema: null },
+];
+
+/** Opt-in documents listed only when a run wrote them. */
+const OPT_IN_WRITTEN_DOCUMENTS: readonly Omit<CorpusIndexArtifactRef, "present">[] = [
+  {
+    name: "field_selection",
+    path: "field-selection.jsonl",
+    schema: "l9.local-source-field-selection/v1",
+  },
+  {
+    name: "field_selection_manifest",
+    path: "field-selection.manifest.json",
+    schema: "l9.local-source-field-selection-manifest/v1",
+  },
 ];
 
 export function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex {
@@ -266,10 +292,19 @@ export function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex {
     // Absence is reported rather than omitted: a consumer that cannot find
     // `corpus-diff.json` should be able to tell "this run made no comparison"
     // from "this run wrote it somewhere else".
-    documents: KNOWN_DOCUMENTS.map((document) => ({
-      ...document,
-      present: written.has(document.path),
-    })),
+    documents: [
+      ...KNOWN_DOCUMENTS.map((document) => ({
+        ...document,
+        present: written.has(document.path),
+      })),
+      // The field-selection view is listed only when written. A run that did not
+      // ask for it keeps the byte-identical index it always had (ADR-091), and a
+      // run that did names the two files it wrote.
+      ...OPT_IN_WRITTEN_DOCUMENTS.filter((document) => written.has(document.path)).map((document) => ({
+        ...document,
+        present: true,
+      })),
+    ],
     ...(input.coverage !== undefined
       ? { coverage: coverageFor(input.coverage, input.documentSignals) }
       : {}),

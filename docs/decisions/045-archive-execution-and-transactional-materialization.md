@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. The "Validation evidence" section is superseded in part by
+[ADR-093](093-retire-committed-per-pr-generated-artifacts.md): the digest is
+unchanged, but the report it binds is no longer committed.
 
 ## Date
 

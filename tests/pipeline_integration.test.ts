@@ -133,8 +133,8 @@ test("pipeline is idempotent — second run is byte-identical with no inject.log
   const contentAfterRun2 = fs.readFileSync(path.join(skillsDir, "lint_file.md"), "utf8");
 
   expect(contentAfterRun2).toBe(contentAfterRun1);
-  run1.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
-  run2.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
+  run1.injected.forEach((r) => { expect(r.bodyPreserved).toBe(true); });
+  run2.injected.forEach((r) => { expect(r.bodyPreserved).toBe(true); });
   const bad = run2.injected.filter((r) => r.injectLogPath !== undefined);
   if (bad.length) {
     console.error('BAD', bad.map((r) => ({ path: r.sourcePath, log: r.injectLogPath, type: r.meta.artifact_type })));

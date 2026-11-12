@@ -30,7 +30,14 @@ const USAGE = [
   "  --name NAME                canonical source name (default: basename of <path>)",
   "  --source-kind KIND         auto|file|directory|archive (default: auto)",
   "  --out DIR                  output directory (default: <tmpdir>/l9-local-source-out)",
-  "  --generated-at ISO         timestamp recorded in the bundle (default: deterministic epoch)",
+  "  --generated-at ISO         timestamp recorded in the bundle (default: deterministic epoch).",
+  "                             In corpus mode, also the time recorded in each root packet,",
+  "                             each root's acquisition manifest (observed_at) and the",
+  "                             corpus-intelligence packet (created_at), so two runs over the",
+  "                             same bytes publish the same generation (ADR-092). In corpus",
+  "                             mode it must be a UTC instant, YYYY-MM-DDTHH:MM:SSZ with up to",
+  "                             3 fractional-second digits, and is recorded as its canonical",
+  "                             millisecond form (2026-11-09T00:00:00Z -> ...00:00.000Z)",
   "  --no-expand-archives       hash archives but do not observe their members",
   "  --no-interpret             skip the deterministic interpretation pass",
   "  --omit PATTERN             gitignore-style omit pattern (repeatable)",
@@ -87,6 +94,21 @@ const USAGE = [
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
+  "  --architecture-evidence    also read every decoded document for the intent,",
+  "                             constraint, assumption, open-question and decision",
+  "                             statements it explicitly labels, and write the complete",
+  "                             set as architecture-evidence.jsonl (+ manifest). Opt-in;",
+  "                             binds the projection's rules into corpus_analysis_id",
+  "                             and leaves every other identity and output unchanged.",
+  "  --field-selection INTENT   also write field-selection.jsonl (+ manifest): per document,",
+  "                             which existing evidence fields the run intent surfaces and",
+  "                             why (architecture_review, design_exploration,",
+  "                             development_handoff, history_audit). Needs",
+  "                             --architecture-evidence. A derived view: nothing is",
+  "                             removed from any payload and no observed file is written",
+  "  --field-selection-max-fields N   selected fields per document (default 6)",
+  "  --field-selection-max-values N   values per selected field (default 5)",
+  "  --field-selection-max-chars N    selected characters per document (default 2000)",
   "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
   "  --embeddings               enable optional semantic embeddings (default: off)",
   "  --embedding-provider NAME  required when --embeddings is given; 'http-json' is",
@@ -137,6 +159,26 @@ function parseArgs(argv) {
     return out;
   };
   return { argv, flag, opt, optAll, corpusMode, target: corpusMode ? null : argv[0] };
+}
+
+/**
+ * The pinned timestamp of a corpus run, or undefined when none was given.
+ *
+ * Refused unless it is an exact UTC ISO-8601 instant: a value the reader could
+ * not parse would be recorded verbatim into every generation file. Returned in
+ * its canonical millisecond form (`toISOString()`), so one instant written two
+ * ways — `…00Z`, `…00.0Z`, `…00.000Z` — publishes one generation (ADR-092).
+ */
+function generatedAtOpt(cli) {
+  if (!cli.argv.includes("--generated-at")) return undefined;
+  const raw = cli.opt("--generated-at", null);
+  if (raw === null || raw.startsWith("--")) fail("--generated-at needs a value", 2);
+  const shape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+  const time = Date.parse(raw);
+  if (!shape.test(raw) || Number.isNaN(time) || new Date(time).toISOString().slice(0, 19) !== raw.slice(0, 19)) {
+    fail(`--generated-at must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ with up to 3 fractional-second digits, got '${raw}'`, 2);
+  }
+  return new Date(time).toISOString();
 }
 
 /** Parse a fractional flag in [0,1], or exit with a precise message. */
@@ -301,7 +343,7 @@ function reportCorpusRun(context) {
     console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
   }
   console.log(`  files scanned    ${result.scanned.files} (${result.scanned.bytes} byte(s))`);
-  console.log(`  archives         ${coverage.archive_count}, ${coverage.archive_member_count} member(s)`);
+  console.log(`  archives         ${coverage.corpus.archive_count}, ${coverage.corpus.archive_member_count} member(s)`);
   console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
   console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
   // A pass that did not run has no completeness figure to print (ADR-068).
@@ -347,7 +389,7 @@ function reportCorpusRun(context) {
   console.log(
     `  projects         ${summary.project_candidate_count} candidate(s), `
     + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
-    + `${coverage.reasoning_eligible_candidate_count} reasoning-eligible`,
+    + `${coverage.reasoning_handoff.reasoning_eligible_candidate_count} reasoning-eligible`,
   );
   const unsupported = coverage.unsupported_format_counts
     .map((format) => `${format.extension}:${format.count}`)
@@ -370,10 +412,31 @@ function reportCorpusRun(context) {
       + ` ${entry.lexically_analyzed_count} analyzed, ${entry.candidate_member_count} in candidates`,
     );
   }
-  console.log(`  ocr required     ${coverage.ocr_required_count}`);
-  console.log(`  encrypted        ${coverage.encrypted_document_count}`);
-  console.log(`  oversized        ${coverage.oversized_document_count}`);
-  console.log(`  secrets skipped  ${coverage.secret_skipped_count}`);
+  console.log(`  ocr required     ${coverage.documents.ocr_required_count}`);
+  console.log(`  encrypted        ${coverage.documents.encrypted_document_count}`);
+  console.log(`  oversized        ${coverage.documents.oversized_document_count}`);
+  console.log(`  secrets skipped  ${coverage.documents.secret_skipped_count}`);
+  // Two sentences for two states (ADR-068): a projection nobody asked for is
+  // reported as not run, never as a corpus that declared nothing.
+  if (result.architectureEvidence === null) {
+    console.log("  architecture     not run (pass --architecture-evidence to read declared statements)");
+  } else {
+    const manifest = result.architectureEvidence.manifest;
+    console.log(
+      `  architecture     ${manifest.record_count} declared statement(s) in ${manifest.document_count} `
+      + `of ${manifest.documents_read} decoded document(s); ${manifest.selected_record_count} selected by `
+      + `${manifest.selection_profile_id}; ${manifest.diagnostic_count} coverage diagnostic(s)`,
+    );
+    console.log("  every statement is source-declared and none is authority-verified");
+  }
+  // Printed only when asked for, so a default run's summary is the one it always was.
+  if (result.fieldSelection !== null && result.fieldSelection !== undefined) {
+    const view = result.fieldSelection.manifest;
+    console.log(
+      `  field selection  ${view.selected_field_count} field(s) selected for intent ${view.intent} across `
+      + `${view.record_count} document(s) by ${view.policy_id}; written to the external generation only`,
+    );
+  }
   if (result.semantic === null) {
     console.log("  semantic         off (--no-semantic-analysis)");
   } else {
@@ -501,6 +564,11 @@ function reportCorpusRun(context) {
 }
 
 async function runCorpusMode(cli) {
+  // One instant for every time this run records inside the generation, when the
+  // operator pinned one; otherwise the observation and packet times stay the
+  // wall clock they always were. CURRENT.json's committed_at is not pinned: it
+  // records when the pointer moved and is not part of any generation (ADR-092).
+  const pinnedAt = generatedAtOpt(cli);
   const repo = path.resolve(__dirname, "..");
   const scan = requireBuilt(path.join(repo, "dist", "corpus_scan.js"));
   const roots = requireBuilt(path.join(repo, "dist", "corpus_roots.js"));
@@ -546,6 +614,20 @@ async function runCorpusMode(cli) {
   const outDir = path.resolve(cli.opt("--out", path.join(os.tmpdir(), "l9-corpus-out")));
   roots.assertOutsideRoots(outDir, rootPaths, "the corpus output directory");
 
+  // The selection profile reads each text document's declared work.kind and
+  // work.status through the interpretation pass; without it every Markdown
+  // proposal is an unknown role. Refused before anything is read.
+  if (cli.flag("--architecture-evidence") && cli.flag("--no-interpret")) {
+    fail("--architecture-evidence needs the interpretation pass that --no-interpret disables. "
+      + "Drop one of the two switches.", 2);
+  }
+  // The field-selection view reads the roles the architecture-evidence selection
+  // assigns. Refused before anything is read, never run with every role unknown.
+  const fieldSelectionIntent = cli.opt("--field-selection", null);
+  if (cli.flag("--field-selection") && fieldSelectionIntent === null) fail("--field-selection needs an intent", 2);
+  if (fieldSelectionIntent !== null && !cli.flag("--architecture-evidence")) {
+    fail("--field-selection reads the document roles --architecture-evidence assigns; pass both.", 2);
+  }
   const cacheEnabled = !cli.flag("--no-cache");
   // The session manifest names the work that was finished; the cache holds what
   // that work produced. Resuming without the cache could only skip work whose
@@ -698,6 +780,18 @@ async function runCorpusMode(cli) {
   if (packMaxArtifacts !== undefined) packBudget.maxArtifactsPerPack = packMaxArtifacts;
   if (packMaxChars !== undefined) packBudget.maxTotalPackCharacters = packMaxChars;
 
+  const fieldSelectionBudget = {};
+  for (const [flag, key] of [
+    ["--field-selection-max-fields", "maxFields"],
+    ["--field-selection-max-values", "maxValuesPerField"],
+    ["--field-selection-max-chars", "maxCharacters"],
+  ]) {
+    const value = numericOpt(cli, flag);
+    if (value === undefined) continue;
+    if (fieldSelectionIntent === null) fail(`${flag} needs --field-selection`, 2);
+    fieldSelectionBudget[key] = value;
+  }
+
   let result;
   try {
     result = await scan.runCorpusScan({
@@ -722,12 +816,19 @@ async function runCorpusMode(cli) {
       },
       budgets: collectBudgets(cli),
       corpusId,
-      observedAt: new Date().toISOString(),
+      ...(pinnedAt !== undefined ? { generatedAt: pinnedAt } : {}),
+      observedAt: pinnedAt ?? new Date().toISOString(),
       verification: cli.flag("--incremental") ? "incremental" : "full",
       verifyContent: cli.flag("--verify-content"),
       allowInferredRootHistory: cli.flag("--allow-inferred-root-history"),
       allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
+      // Opt-in: an operator who did not ask for the projection gets the run they
+      // always got, identities included.
+      ...(cli.flag("--architecture-evidence") ? { architectureEvidence: true } : {}),
+      ...(fieldSelectionIntent !== null
+        ? { fieldSelection: { intent: fieldSelectionIntent, budget: fieldSelectionBudget } }
+        : {}),
       ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
       ...(embeddingPairThreshold !== undefined ? { embeddingPairThreshold } : {}),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
@@ -759,6 +860,22 @@ async function runCorpusMode(cli) {
     { path: "document-work-signals.jsonl", contents: result.documentWorkSignals.payloadJsonl },
     { path: "document-work-signals.manifest.json", contents: result.documentWorkSignals.manifestJson },
   ];
+  // Opt-in, and absent from the generation when it did not run: the index lists
+  // it as not written, which is the honest statement rather than an empty file.
+  if (result.architectureEvidence !== null) {
+    outputs.push(
+      { path: "architecture-evidence.jsonl", contents: result.architectureEvidence.payloadJsonl },
+      { path: "architecture-evidence.manifest.json", contents: result.architectureEvidence.manifestJson },
+    );
+  }
+  // The field-selection view, in the same generation as everything it cites:
+  // its carrier is this external generation, never an observed file.
+  if (result.fieldSelection !== null) {
+    outputs.push(
+      { path: "field-selection.jsonl", contents: result.fieldSelection.payloadJsonl },
+      { path: "field-selection.manifest.json", contents: result.fieldSelection.manifestJson },
+    );
+  }
   if (result.semantic !== null) {
     outputs.push(
       { path: "semantic-relations.json", contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
@@ -789,7 +906,12 @@ async function runCorpusMode(cli) {
     for (const root of result.rootPackets) {
       const rootDir = `roots/${root.directory}`;
       const staged = path.join(bundleScratch, root.directory);
-      repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
+      // The bundle manifest and validation receipt record the same pinned time
+      // the packet does, as the single-source bundle already does (ADR-092).
+      repositoryModel.emitRepositoryModelBundle(root.packet, {
+        outDir: staged,
+        ...(pinnedAt !== undefined ? { generatedAt: pinnedAt } : {}),
+      });
       for (const relative of listFilesRecursively(staged, ordering.compareCodePoints)) {
         outputs.push({
           path: `${rootDir}/bundle/${relative.split(path.sep).join("/")}`,
@@ -832,7 +954,7 @@ async function runCorpusMode(cli) {
   // A packet that fails its own referential validation fails the run. Publishing
   // the generation without it would leave a consumer to fall back to reading the
   // directory, which is the arrangement this packet exists to end.
-  const corpusIntelligenceCreatedAt = new Date().toISOString();
+  const corpusIntelligenceCreatedAt = pinnedAt ?? new Date().toISOString();
   try {
     const built = corpusIntelligence.buildCorpusIntelligencePacket(
       corpusIntelligenceInput.corpusIntelligenceInput(result, {
